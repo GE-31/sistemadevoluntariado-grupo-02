@@ -61,23 +61,24 @@ function initDashboardCharts(datos) {
     // 1. Gráfico línea izquierdo
     crearLineChart('chartActividadesMes');
 
-    // 2. Gráfico línea derecho (columna derecha)
-    crearLineChart('chartActividadesMesRight');
-
     // ============================
-    // 3. Gráfico DONUT – Horas Voluntarias
+    // 3. Gráfico DONUT – Horas Voluntarias + Leyenda
     // ============================
     var ctxDonut = document.getElementById('chartHorasVoluntarias');
     if (ctxDonut) {
+        var donutLabelsArr = horasLabels.length > 0 ? horasLabels : ['Total'];
+        var donutDataArr   = horasData.length > 0 ? horasData : [1];
+        var donutColorsArr = horasData.length > 0
+            ? donutColors.slice(0, horasData.length)
+            : ['#10b981'];
+
         new Chart(ctxDonut.getContext('2d'), {
             type: 'doughnut',
             data: {
-                labels: horasLabels.length > 0 ? horasLabels : ['Total'],
+                labels: donutLabelsArr,
                 datasets: [{
-                    data: horasData.length > 0 ? horasData : [1],
-                    backgroundColor: horasData.length > 0
-                        ? donutColors.slice(0, horasData.length)
-                        : ['#10b981'],
+                    data: donutDataArr,
+                    backgroundColor: donutColorsArr,
                     borderColor: '#fff',
                     borderWidth: 3,
                     hoverOffset: 6
@@ -106,5 +107,21 @@ function initDashboardCharts(datos) {
                 }
             }
         });
+
+        // ── Generar leyenda dinámica ──
+        var legendContainer = document.getElementById('horasLegend');
+        if (legendContainer && horasLabels.length > 0) {
+            legendContainer.innerHTML = '';
+            var totalHoras = horasData.reduce(function(a,b){return a+b;},0);
+            for (var i = 0; i < horasLabels.length; i++) {
+                var pct = totalHoras > 0 ? Math.round(horasData[i] / totalHoras * 100) : 0;
+                var item = document.createElement('div');
+                item.className = 'horas-legend-item';
+                item.innerHTML =
+                    '<span class="horas-legend-dot" style="background:' + donutColorsArr[i] + '"></span>' +
+                    '<span>' + horasLabels[i] + ' <span class="horas-legend-value">(' + horasData[i] + 'h)</span></span>';
+                legendContainer.appendChild(item);
+            }
+        }
     }
 }

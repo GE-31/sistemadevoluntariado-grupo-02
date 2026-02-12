@@ -113,26 +113,28 @@
 
             </div>
 
-            <!-- COLUMNA DERECHA: Donut Horas -->
-            <div class="chart-card chart-card-right">
+            <!-- COLUMNA DERECHA: Horas Voluntarias -->
+            <div class="chart-card chart-card-right horas-card">
                 <div class="chart-header">
-                    <h3 class="chart-title">Actividades por Mes</h3>
+                    <h3 class="chart-title">Horas Voluntarias</h3>
                 </div>
                 <div class="chart-body chart-body-donut">
-                    <div class="donut-chart-area">
-                        <canvas id="chartActividadesMesRight"></canvas>
-                    </div>
-                    <div class="donut-big-wrapper">
-                        <canvas id="chartHorasVoluntarias"></canvas>
-                        <div class="donut-big-center">
-                            <span class="donut-big-total">${totalHorasVoluntarias}h</span>
-                            <span class="donut-big-label">Total Horas</span>
+                    <div class="horas-donut-row">
+                        <div class="donut-big-wrapper">
+                            <canvas id="chartHorasVoluntarias"></canvas>
+                            <div class="donut-big-center">
+                                <span class="donut-big-total">${totalHorasVoluntarias}h</span>
+                                <span class="donut-big-label">Total Actividades</span>
+                            </div>
+                        </div>
+                        <div class="horas-legend" id="horasLegend">
+                            <!-- La leyenda se genera dinámicamente desde JS -->
                         </div>
                     </div>
                 </div>
-                <div class="chart-footer">
+                <div class="chart-footer horas-footer">
                     <div class="proxima-actividad">
-                        <div class="pa-icon"><i class="fas fa-clipboard-list"></i></div>
+                        <div class="pa-icon pa-icon-green"><i class="fas fa-tree"></i></div>
                         <div class="pa-info">
                             <span class="pa-label">Próxima Actividad</span>
                             <span class="pa-name">${proximaActividadNombre != null ? proximaActividadNombre : 'Sin actividades próximas'}</span>
