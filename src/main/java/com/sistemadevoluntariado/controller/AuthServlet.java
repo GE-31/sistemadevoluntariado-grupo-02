@@ -49,6 +49,15 @@ public class AuthServlet extends HttpServlet {
             return;
         }
 
+        // Verificar si la cuenta está bloqueada
+        int minutosBloqueo = usuarioDAO.verificarBloqueo(usuario);
+        if (minutosBloqueo > 0) {
+            System.out.println("Cuenta bloqueada para: " + usuario + " (" + minutosBloqueo + " min restantes)");
+            request.setAttribute("error", "Cuenta bloqueada por demasiados intentos fallidos");
+            request.getRequestDispatcher("/views/auth/login.jsp").forward(request, response);
+            return;
+        }
+
         Usuario user = usuarioDAO.validarLogin(usuario, clave);
 
         if (user != null) {
@@ -78,7 +87,20 @@ public class AuthServlet extends HttpServlet {
             response.sendRedirect(request.getContextPath() + "/dashboard");
         } else {
             System.out.println("✗ Login fallido para: " + usuario);
-            request.setAttribute("error", "Usuario o contraseña incorrectos");
+
+            // Registrar intento fallido
+            int resultado = usuarioDAO.registrarIntentoFallido(usuario);
+
+            if (resultado == -1) {
+                // Se acaba de bloquear la cuenta
+                request.setAttribute("error", "Cuenta bloqueada por demasiados intentos fallidos");
+            } else if (resultado > 0) {
+                int restantes = 3 - resultado;
+                request.setAttribute("error", "Usuario o contraseña incorrectos. Intentos restantes: " + restantes);
+            } else {
+                request.setAttribute("error", "Usuario o contraseña incorrectos");
+            }
+
             request.getRequestDispatcher("/views/auth/login.jsp").forward(request, response);
         }
     }

@@ -5,6 +5,9 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Timestamp;
+import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -17,12 +20,162 @@ public class UsuarioDAO {
 
     private static final Logger logger = Logger.getLogger(UsuarioDAO.class.getName());
 
+    // Máximo de intentos fallidos permitidos
+    private static final int MAX_INTENTOS_FALLIDOS = 3;
+
+    // Tiempo de bloqueo en minutos
+    private static final int TIEMPO_BLOQUEO_MINUTOS = 15;
+
+    /**
+     * Verifica si una cuenta está bloqueada por intentos fallidos.
+     * Si el bloqueo ya expiró, resetea automáticamente los intentos.
+     * Usa procedimiento almacenado: sp_verificar_bloqueo
+     * 
+     * @return minutos restantes de bloqueo, o 0 si no está bloqueada.
+     */
+    public int verificarBloqueo(String username) {
+        String sp = "{CALL sp_verificar_bloqueo(?)}";
+
+        try {
+            ConexionBD conexion = ConexionBD.getInstance();
+            Connection conn = conexion.getConnection();
+
+            if (conn == null) return 0;
+
+            try (CallableStatement cs = conn.prepareCall(sp)) {
+                cs.setString(1, username);
+                ResultSet rs = cs.executeQuery();
+
+                if (rs.next()) {
+                    Timestamp bloqueadoHasta = rs.getTimestamp("bloqueado_hasta");
+
+                    if (bloqueadoHasta != null) {
+                        LocalDateTime bloqueoFin = bloqueadoHasta.toLocalDateTime();
+                        LocalDateTime ahora = LocalDateTime.now();
+
+                        if (ahora.isBefore(bloqueoFin)) {
+                            // Aún está bloqueado
+                            long minutosRestantes = ChronoUnit.MINUTES.between(ahora, bloqueoFin) + 1;
+                            logger.info("⛔ Cuenta bloqueada para " + username + ", faltan " + minutosRestantes + " min");
+                            return (int) minutosRestantes;
+                        } else {
+                            // El bloqueo expiró, resetear intentos
+                            resetearIntentosFallidos(username);
+                            return 0;
+                        }
+                    }
+                }
+            }
+        } catch (SQLException e) {
+            logger.log(Level.SEVERE, "✗ Error al verificar bloqueo", e);
+        }
+
+        return 0;
+    }
+
+    /**
+     * Registra un intento fallido de login.
+     * Si se alcanza el máximo (3), bloquea la cuenta por 15 minutos.
+     * Usa procedimiento almacenado: sp_registrar_intento_fallido
+     * 
+     * @return número de intentos fallidos actuales, o -1 si se bloqueó la cuenta.
+     */
+    public int registrarIntentoFallido(String username) {
+        String sp = "{CALL sp_registrar_intento_fallido(?, ?, ?)}";
+
+        try {
+            ConexionBD conexion = ConexionBD.getInstance();
+            Connection conn = conexion.getConnection();
+
+            if (conn == null) return 0;
+
+            try (CallableStatement cs = conn.prepareCall(sp)) {
+                cs.setString(1, username);
+                cs.setInt(2, MAX_INTENTOS_FALLIDOS);
+                cs.setInt(3, TIEMPO_BLOQUEO_MINUTOS);
+                ResultSet rs = cs.executeQuery();
+
+                if (rs.next()) {
+                    int intentos = rs.getInt("intentos_fallidos");
+
+                    if (intentos >= MAX_INTENTOS_FALLIDOS) {
+                        logger.warning("⛔ Cuenta bloqueada por " + TIEMPO_BLOQUEO_MINUTOS + " minutos: " + username);
+                        return -1; // Indica que se bloqueó
+                    }
+
+                    logger.info("⚠ Intento fallido #" + intentos + " de " + MAX_INTENTOS_FALLIDOS + " para: " + username);
+                    return intentos;
+                }
+            }
+        } catch (SQLException e) {
+            logger.log(Level.SEVERE, "✗ Error al registrar intento fallido", e);
+        }
+
+        return 0;
+    }
+
+    /**
+     * Resetea los intentos fallidos y el bloqueo al hacer login exitoso
+     * o cuando el tiempo de bloqueo ha expirado.
+     * Usa procedimiento almacenado: sp_resetear_intentos_fallidos
+     */
+    public void resetearIntentosFallidos(String username) {
+        String sp = "{CALL sp_resetear_intentos_fallidos(?)}";
+
+        try {
+            ConexionBD conexion = ConexionBD.getInstance();
+            Connection conn = conexion.getConnection();
+
+            if (conn == null) return;
+
+            try (CallableStatement cs = conn.prepareCall(sp)) {
+                cs.setString(1, username);
+                cs.executeUpdate();
+                logger.info("✓ Intentos fallidos reseteados para: " + username);
+            }
+        } catch (SQLException e) {
+            logger.log(Level.SEVERE, "✗ Error al resetear intentos fallidos", e);
+        }
+    }
+
+    /**
+     * Obtiene la cantidad de intentos fallidos restantes para un usuario.
+     * Usa procedimiento almacenado: sp_obtener_intentos_restantes
+     * 
+     * @return intentos restantes antes del bloqueo.
+     */
+    public int obtenerIntentosRestantes(String username) {
+        String sp = "{CALL sp_obtener_intentos_restantes(?, ?)}";
+
+        try {
+            ConexionBD conexion = ConexionBD.getInstance();
+            Connection conn = conexion.getConnection();
+
+            if (conn == null) return MAX_INTENTOS_FALLIDOS;
+
+            try (CallableStatement cs = conn.prepareCall(sp)) {
+                cs.setString(1, username);
+                cs.setInt(2, MAX_INTENTOS_FALLIDOS);
+                ResultSet rs = cs.executeQuery();
+
+                if (rs.next()) {
+                    return rs.getInt("intentos_restantes");
+                }
+            }
+        } catch (SQLException e) {
+            logger.log(Level.SEVERE, "✗ Error al obtener intentos restantes", e);
+        }
+
+        return MAX_INTENTOS_FALLIDOS;
+    }
+
     /**
      * Valida las credenciales del usuario usando BCrypt.
+     * Usa procedimiento almacenado: sp_obtener_usuario_por_username
      */
     public Usuario validarLogin(String username, String password) {
 
-        String sql = "SELECT id_usuario, nombres, apellidos, correo, username, dni, password_hash, foto_perfil, estado, creado_en, actualizado_en FROM usuario WHERE username = ?";
+        String sp = "{CALL sp_obtener_usuario_por_username(?)}";
 
         try {
             ConexionBD conexion = ConexionBD.getInstance();
@@ -35,10 +188,10 @@ public class UsuarioDAO {
 
             logger.info(() -> "✓ Conectado a BD - Validando usuario: " + username);
 
-            try (PreparedStatement ps = conn.prepareStatement(sql)) {
-                ps.setString(1, username);
+            try (CallableStatement cs = conn.prepareCall(sp)) {
+                cs.setString(1, username);
 
-                ResultSet rs = ps.executeQuery();
+                ResultSet rs = cs.executeQuery();
 
                 if (rs.next()) {
                     String hashBD = rs.getString("password_hash");
@@ -58,6 +211,9 @@ public class UsuarioDAO {
                                 u.setEstado(rs.getString("estado"));
                                 u.setCreadoEn(rs.getString("creado_en"));
                                 u.setActualizadoEn(rs.getString("actualizado_en"));
+
+                                // Login exitoso → resetear intentos fallidos
+                                resetearIntentosFallidos(username);
 
                                 logger.info(() -> "✓ Login exitoso para usuario: " + username);
                                 return u;

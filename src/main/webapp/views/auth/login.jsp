@@ -21,11 +21,9 @@
         <h1 class="login-title">Bienvenido</h1>
         <p class="login-subtitle">Ingresa tus credenciales para continuar</p>
 
-        <% if (request.getAttribute("error") != null) { %>
-            <div class="alert-error">
-                <span><%= request.getAttribute("error") %></span>
-            </div>
-        <% } %>
+        <div class="alert-error" style="<%= request.getAttribute("error") != null ? "" : "opacity: 0;" %>">
+            <span><%= request.getAttribute("error") != null ? request.getAttribute("error") : "" %></span>
+        </div>
 
         <form action="${pageContext.request.contextPath}/login" method="post" id="loginForm" class="login-form">
             <div class="form-group">
