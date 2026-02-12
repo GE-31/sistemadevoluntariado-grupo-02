@@ -85,7 +85,8 @@ document.addEventListener('DOMContentLoaded', function() {
             if (data.success) {
                 // Actualizar avatar en el topbar
                 const avatarDiv = document.querySelector('.user-profile .avatar');
-                avatarDiv.innerHTML = '<img src="' + data.fotoUrl + '" alt="Foto de perfil" class="avatar-img">';
+                const ctxPath = window.location.pathname.split('/').slice(0, 2).join('/');
+                avatarDiv.innerHTML = '<img src="' + data.fotoUrl + '" alt="Foto de perfil" class="avatar-img" onerror="this.onerror=null; this.src=\'' + ctxPath + '/img/perfil.png\';">';
                 mostrarToastPerfil('Foto actualizada correctamente', 'success');
             } else {
                 mostrarToastPerfil(data.message || 'Error al subir la foto', 'error');

@@ -43,15 +43,15 @@
                 </div>
             </div>
         </div>
-
+ 
         <!-- PERFIL -->
         <div class="user-profile" id="openAvatarModal">
 
             <div class="avatar">
                 <% if (usuario.getFotoPerfil() != null && !usuario.getFotoPerfil().isEmpty()) { %>
-                    <img src="<%= request.getContextPath() + "/" + usuario.getFotoPerfil() %>?t=<%= System.currentTimeMillis() %>" alt="Foto de perfil" class="avatar-img">
+                    <img src="<%= request.getContextPath() + "/" + usuario.getFotoPerfil() %>?t=<%= System.currentTimeMillis() %>" alt="Foto de perfil" class="avatar-img" onerror="this.onerror=null; this.src='<%= request.getContextPath() %>/img/perfil.png';">
                 <% } else { %>
-                    <%= usuario.getNombres().substring(0,1).toUpperCase() %>
+                    <img src="<%= request.getContextPath() %>/img/perfil.png" alt="Foto de perfil" class="avatar-img">
                 <% } %>
             </div>
 
