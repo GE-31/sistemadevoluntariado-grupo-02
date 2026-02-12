@@ -72,25 +72,77 @@
                 </div>
             </div>
 
-             <!-- CARD ESPECIAL: TOTAL DONACIONES -->
-            <div class="card card-donaciones">
-                
-                <!-- MONTO ARRIBA -->
-                <div class="donacion-monto">
-                    S/ ${montoDonaciones}
+        </section>
+
+        <!-- ============================================= -->
+        <!-- SECCIÓN: Donaciones + Gráficos                -->
+        <!-- ============================================= -->
+        <section class="dashboard-middle">
+
+            <!-- COLUMNA IZQUIERDA -->
+            <div class="middle-left">
+
+                <!-- CARD DONACIONES (ancha) -->
+                <div class="card card-donaciones">
+                    <div class="donacion-content">
+                        <div>
+                            <div class="donacion-monto">
+                                <i class="fas fa-money-bill-wave"></i> S/ ${montoDonaciones}
+                            </div>
+                            <div class="donacion-titulo">Total Donaciones</div>
+                        </div>
+                        <div class="donacion-icon">
+                            <img src="${pageContext.request.contextPath}/img/money.png" alt="Donaciones" onerror="this.style.display='none'">
+                            <i class="fas fa-money-bill-wave fa-3x" style="color:rgba(255,255,255,0.3)"></i>
+                        </div>
+                    </div>
                 </div>
 
-                <!-- TEXTO CENTRAL -->
-                <div class="donacion-titulo">
-                    Total Donaciones
+                <!-- GRÁFICO LÍNEA: Actividades por Mes -->
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <h3 class="chart-title">Actividades por Mes</h3>
+                        <span class="chart-badge blue">
+                            <i class="fas fa-chart-line"></i> Tendencia
+                        </span>
+                    </div>
+                    <div class="chart-body">
+                        <canvas id="chartActividadesMes"></canvas>
+                    </div>
                 </div>
 
-                <!-- ICONO ABAJO -->
-                <div class="donacion-icon">
-                    <i class="fas fa-money-bill-wave"></i>
-                </div>
             </div>
 
+            <!-- COLUMNA DERECHA: Donut Horas -->
+            <div class="chart-card chart-card-right">
+                <div class="chart-header">
+                    <h3 class="chart-title">Actividades por Mes</h3>
+                </div>
+                <div class="chart-body chart-body-donut">
+                    <div class="donut-chart-area">
+                        <canvas id="chartActividadesMesRight"></canvas>
+                    </div>
+                    <div class="donut-big-wrapper">
+                        <canvas id="chartHorasVoluntarias"></canvas>
+                        <div class="donut-big-center">
+                            <span class="donut-big-total">${totalHorasVoluntarias}h</span>
+                            <span class="donut-big-label">Total Horas</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="chart-footer">
+                    <div class="proxima-actividad">
+                        <div class="pa-icon"><i class="fas fa-clipboard-list"></i></div>
+                        <div class="pa-info">
+                            <span class="pa-label">Próxima Actividad</span>
+                            <span class="pa-name">${proximaActividadNombre != null ? proximaActividadNombre : 'Sin actividades próximas'}</span>
+                        </div>
+                    </div>
+                    <a href="${pageContext.request.contextPath}/actividades" class="btn-ver green">
+                        Ver Actividades <i class="fas fa-arrow-right"></i>
+                    </a>
+                </div>
+            </div>
 
         </section>
 
@@ -101,6 +153,18 @@
 </div>
 
 <script src="https://kit.fontawesome.com/a2e0e6ad65.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="${pageContext.request.contextPath}/js/graficos.js"></script>
+
+<script>
+    // Solo pasamos los datos del servidor al JS externo
+    initDashboardCharts({
+        actLabels:   ${actividadesPorMesLabels != null ? actividadesPorMesLabels : '["Ene","Feb","Mar","Abr","May","Jun"]'},
+        actData:     ${actividadesPorMesData != null ? actividadesPorMesData : '[0,0,0,0,0,0]'},
+        horasLabels: ${horasLabels != null ? horasLabels : '[]'},
+        horasData:   ${horasData != null ? horasData : '[]'}
+    });
+</script>
 
 </body>
 

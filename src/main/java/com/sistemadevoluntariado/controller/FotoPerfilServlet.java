@@ -4,7 +4,6 @@ import java.io.File;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.nio.file.Paths;
-import java.util.UUID;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -29,7 +28,8 @@ import jakarta.servlet.http.Part;
 public class FotoPerfilServlet extends HttpServlet {
 
     private static final Logger logger = Logger.getLogger(FotoPerfilServlet.class.getName());
-    private static final String UPLOAD_DIR = "uploads" + File.separator + "fotos";
+    // Guardar fotos directamente en la carpeta img/
+    private static final String UPLOAD_DIR = "img";
 
     @Override
     protected void doPost(HttpServletRequest request, HttpServletResponse response)
@@ -73,35 +73,50 @@ public class FotoPerfilServlet extends HttpServlet {
                 return;
             }
 
-            // Crear directorio de uploads si no existe
+            // Ruta de la carpeta img/ dentro del deploy
             String appPath = request.getServletContext().getRealPath("");
             String uploadPath = appPath + File.separator + UPLOAD_DIR;
             File uploadDir = new File(uploadPath);
             if (!uploadDir.exists()) {
                 uploadDir.mkdirs();
-                logger.info("► Directorio de uploads creado: " + uploadPath);
+                logger.info("► Directorio img/ creado: " + uploadPath);
             }
 
-            // Generar nombre único para el archivo
-            String originalFileName = Paths.get(filePart.getSubmittedFileName()).getFileName().toString();
-            String extension = originalFileName.substring(originalFileName.lastIndexOf("."));
-            String nuevoNombre = "perfil_" + usuario.getIdUsuario() + "_" + UUID.randomUUID().toString().substring(0, 8) + extension;
-
-            // Eliminar foto anterior si existe
-            if (usuario.getFotoPerfil() != null && !usuario.getFotoPerfil().isEmpty()) {
-                File fotoAnterior = new File(appPath + File.separator + usuario.getFotoPerfil().replace("/", File.separator));
-                if (fotoAnterior.exists()) {
-                    fotoAnterior.delete();
-                    logger.info("► Foto anterior eliminada: " + fotoAnterior.getAbsolutePath());
+            // ────────────────────────────────────────────────────
+            // PRIVACIDAD: Eliminar TODAS las fotos anteriores
+            // del usuario antes de guardar la nueva.
+            // Busca cualquier archivo que empiece con "perfil_<id>"
+            // ────────────────────────────────────────────────────
+            String prefijo = "perfil_" + usuario.getIdUsuario();
+            File[] fotosAnteriores = uploadDir.listFiles((dir, name) -> name.startsWith(prefijo));
+            if (fotosAnteriores != null) {
+                for (File fotoVieja : fotosAnteriores) {
+                    if (fotoVieja.delete()) {
+                        logger.info("► Foto anterior eliminada (privacidad): " + fotoVieja.getName());
+                    }
                 }
             }
 
-            // Guardar archivo
-            filePart.write(uploadPath + File.separator + nuevoNombre);
-            logger.info("✓ Foto guardada: " + uploadPath + File.separator + nuevoNombre);
+            // También borrar desde la ruta guardada en BD (por si estaba en uploads/fotos)
+            if (usuario.getFotoPerfil() != null && !usuario.getFotoPerfil().isEmpty()) {
+                File fotoAnteriorBD = new File(appPath + File.separator + usuario.getFotoPerfil().replace("/", File.separator));
+                if (fotoAnteriorBD.exists()) {
+                    fotoAnteriorBD.delete();
+                    logger.info("► Foto anterior (ruta BD) eliminada: " + fotoAnteriorBD.getAbsolutePath());
+                }
+            }
 
-            // Ruta relativa para guardar en BD
-            String rutaRelativa = UPLOAD_DIR.replace(File.separator, "/") + "/" + nuevoNombre;
+            // Nombre fijo por usuario: perfil_<id>.<ext> (sin UUID = una sola foto siempre)
+            String originalFileName = Paths.get(filePart.getSubmittedFileName()).getFileName().toString();
+            String extension = originalFileName.substring(originalFileName.lastIndexOf(".")).toLowerCase();
+            String nuevoNombre = prefijo + extension;
+
+            // Guardar archivo en img/
+            filePart.write(uploadPath + File.separator + nuevoNombre);
+            logger.info("✓ Foto guardada en img/: " + nuevoNombre);
+
+            // Ruta relativa para la BD
+            String rutaRelativa = UPLOAD_DIR + "/" + nuevoNombre;
 
             // Actualizar en la BD
             UsuarioDAO dao = new UsuarioDAO();

@@ -49,7 +49,7 @@
 
             <div class="avatar">
                 <% if (usuario.getFotoPerfil() != null && !usuario.getFotoPerfil().isEmpty()) { %>
-                    <img src="<%= request.getContextPath() + "/" + usuario.getFotoPerfil() %>" alt="Foto de perfil" class="avatar-img">
+                    <img src="<%= request.getContextPath() + "/" + usuario.getFotoPerfil() %>?t=<%= System.currentTimeMillis() %>" alt="Foto de perfil" class="avatar-img">
                 <% } else { %>
                     <%= usuario.getNombres().substring(0,1).toUpperCase() %>
                 <% } %>

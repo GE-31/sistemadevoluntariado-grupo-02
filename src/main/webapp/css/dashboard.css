@@ -905,6 +905,280 @@ body {
     margin-left: 60px;
 }
 
+/* ================================
+   DASHBOARD MIDDLE LAYOUT
+   ================================ */
+
+.dashboard-middle {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+    margin-top: 1.5rem;
+    align-items: stretch;
+}
+
+.middle-left {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+/* ── Card Donaciones (ancha, horizontal) ── */
+.dashboard-middle .card-donaciones {
+    width: 100%;
+    max-width: none;
+    min-height: auto;
+    padding: 1.5rem 1.8rem;
+    flex-direction: row;
+}
+
+.donacion-content {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+}
+
+.donacion-content .donacion-monto {
+    font-size: 1.8rem;
+    margin-bottom: 0.3rem;
+}
+
+.donacion-content .donacion-monto i {
+    font-size: 1.2rem;
+    opacity: 0.7;
+    margin-right: 6px;
+}
+
+.donacion-content .donacion-titulo {
+    font-size: 0.95rem;
+    margin-bottom: 0;
+}
+
+.donacion-content .donacion-icon {
+    opacity: 0.85;
+}
+
+.donacion-content .donacion-icon img {
+    width: 70px;
+    height: auto;
+}
+
+/* ================================
+   CHART CARDS
+   ================================ */
+
+.chart-card {
+    background: #fff;
+    border-radius: 16px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 4px 16px rgba(0, 0, 0, 0.04);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transition: box-shadow 0.3s ease;
+}
+
+.chart-card:hover {
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.10);
+}
+
+.chart-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1.25rem 1.5rem 0.5rem;
+}
+
+.chart-title {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: #1e293b;
+}
+
+.chart-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.chart-badge.blue {
+    background: rgba(59, 130, 246, 0.10);
+    color: #3b82f6;
+}
+
+/* Chart body */
+.chart-body {
+    padding: 0.5rem 1.25rem 0.75rem;
+    flex: 1;
+    min-height: 0;
+}
+
+.chart-body canvas {
+    width: 100% !important;
+    height: 200px !important;
+}
+
+/* ── Columna derecha: card con gráfico línea + donut ── */
+.chart-card-right {
+    display: flex;
+    flex-direction: column;
+}
+
+.chart-body-donut {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    padding: 0 1.25rem;
+    flex: 1;
+}
+
+.donut-chart-area {
+    width: 100%;
+    padding: 0.25rem 0;
+}
+
+.donut-chart-area canvas {
+    width: 100% !important;
+    height: 160px !important;
+}
+
+/* ── Donut grande ── */
+.donut-big-wrapper {
+    position: relative;
+    width: 150px;
+    height: 150px;
+    flex-shrink: 0;
+    margin: 0.25rem 0 0.5rem;
+}
+
+.donut-big-wrapper canvas {
+    width: 150px !important;
+    height: 150px !important;
+}
+
+.donut-big-center {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    pointer-events: none;
+}
+
+.donut-big-total {
+    display: block;
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: #10b981;
+    line-height: 1.1;
+}
+
+.donut-big-label {
+    display: block;
+    font-size: 0.65rem;
+    color: #94a3b8;
+    font-weight: 500;
+    margin-top: 2px;
+}
+
+/* ── Chart footer ── */
+.chart-footer {
+    border-top: 1px solid #f1f5f9;
+    padding: 1rem 1.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
+
+.proxima-actividad {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1;
+    min-width: 0;
+}
+
+.proxima-actividad .pa-icon {
+    width: 36px;
+    height: 36px;
+    background: rgba(59, 130, 246, 0.08);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #3b82f6;
+    font-size: 0.9rem;
+    flex-shrink: 0;
+}
+
+.proxima-actividad .pa-info {
+    min-width: 0;
+}
+
+.proxima-actividad .pa-label {
+    font-size: 0.7rem;
+    color: #94a3b8;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    display: block;
+}
+
+.proxima-actividad .pa-name {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #1e293b;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: block;
+}
+
+.btn-ver {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 18px;
+    border-radius: 10px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-decoration: none;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+.btn-ver.green {
+    background: #10b981;
+    color: #fff;
+}
+
+.btn-ver.green:hover {
+    background: #059669;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.35);
+}
+
+.btn-ver.blue {
+    background: #3b82f6;
+    color: #fff;
+}
+
+.btn-ver.blue:hover {
+    background: #2563eb;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.35);
+}
+
+/* ================================
+   RESPONSIVE (actualizado)
+   ================================ */
+
 @media (max-width: 768px) {
     .dashboard-container {
         flex-direction: column;
@@ -932,5 +1206,18 @@ body {
 
     .grid-info {
         grid-template-columns: 1fr;
+    }
+
+    .dashboard-middle {
+        grid-template-columns: 1fr;
+    }
+
+    .chart-footer {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .btn-ver {
+        justify-content: center;
     }
 }
