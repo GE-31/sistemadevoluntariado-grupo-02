@@ -5,6 +5,8 @@ import java.io.IOException;
 import com.sistemadevoluntariado.dao.NotificacionDAO;
 import com.sistemadevoluntariado.dao.UsuarioDAO;
 import com.sistemadevoluntariado.model.Usuario;
+import com.sistemadevoluntariado.util.CookieUtil;
+import com.sistemadevoluntariado.util.JwtUtil;
 
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServlet;
@@ -20,6 +22,13 @@ public class AuthServlet extends HttpServlet {
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
+
+        // Si ya tiene un token válido, redirigir al dashboard
+        String token = CookieUtil.obtenerTokenDeCookie(request);
+        if (token != null && JwtUtil.validarToken(token) != null) {
+            response.sendRedirect(request.getContextPath() + "/dashboard");
+            return;
+        }
 
         request.getRequestDispatcher("/views/auth/login.jsp")
                .forward(request, response);
@@ -44,6 +53,19 @@ public class AuthServlet extends HttpServlet {
 
         if (user != null) {
             System.out.println("✓ Login exitoso para: " + usuario);
+
+            // Generar token JWT
+            String token = JwtUtil.generarToken(
+                    user.getIdUsuario(),
+                    user.getUsername(),
+                    user.getNombres(),
+                    user.getApellidos()
+            );
+
+            // Establecer cookie persistente con el token
+            CookieUtil.agregarCookieAuth(response, token);
+
+            // Establecer sesión HTTP
             HttpSession session = request.getSession();
             session.setAttribute("usuarioLogeado", user);
 

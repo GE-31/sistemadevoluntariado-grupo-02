@@ -7,6 +7,21 @@
 
     <display-name>Sistema de Voluntariado</display-name>
 
+    <!-- ========================= FILTRO DE AUTENTICACIÓN ========================= -->
+    <filter>
+        <filter-name>AuthFilter</filter-name>
+        <filter-class>com.sistemadevoluntariado.filter.AuthFilter</filter-class>
+    </filter>
+    <filter-mapping>
+        <filter-name>AuthFilter</filter-name>
+        <url-pattern>/*</url-pattern>
+    </filter-mapping>
+
+    <!-- ========================= CONFIGURACIÓN DE SESIÓN ========================= -->
+    <session-config>
+        <session-timeout>20</session-timeout>
+    </session-config>
+
     <!-- Página de inicio predeterminada -->
     <welcome-file-list>
         <welcome-file>index.jsp</welcome-file>
@@ -40,6 +55,16 @@
     <servlet-mapping>
         <servlet-name>LogoutServlet</servlet-name>
         <url-pattern>/logout</url-pattern>
+    </servlet-mapping>
+
+    <!-- SessionRenewServlet - Renovar sesión vía AJAX -->
+    <servlet>
+        <servlet-name>SessionRenewServlet</servlet-name>
+        <servlet-class>com.sistemadevoluntariado.controller.SessionRenewServlet</servlet-class>
+    </servlet>
+    <servlet-mapping>
+        <servlet-name>SessionRenewServlet</servlet-name>
+        <url-pattern>/api/session/renew</url-pattern>
     </servlet-mapping>
 
 </web-app>

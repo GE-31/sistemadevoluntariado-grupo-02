@@ -216,6 +216,7 @@ pageEncoding="UTF-8" %>
 </aside>
 
 <script src="${pageContext.request.contextPath}/js/sidebar.js"></script>
+<script src="${pageContext.request.contextPath}/js/session-manager.js"></script>
 <script>
   function logout(event) {
     event.preventDefault();
