@@ -53,6 +53,11 @@
             </button>
         </div>
 
+        <div class="donaciones-filtros">
+            <label for="buscarDonaciones">Buscar</label>
+            <input type="text" id="buscarDonaciones" placeholder="Tipo, descripcion, donante, actividad o registrado por">
+        </div>
+
         <div class="donaciones-table">
             <table>
                 <thead>
@@ -93,7 +98,7 @@
                             <button class="btn-icon edit" onclick="editarDonacion(<%= d.getIdDonacion() %>)" title="Editar">
                                 <i class="fas fa-edit"></i>
                             </button>
-                            <button class="btn-icon delete" onclick="eliminarDonacion(<%= d.getIdDonacion() %>)" title="Eliminar">
+                            <button class="btn-icon delete" onclick="anularDonacion(<%= d.getIdDonacion() %>)" title="Anular">
                                 <i class="fas fa-trash"></i>
                             </button>
                         </td>
@@ -105,6 +110,11 @@
                 <% } %>
                 </tbody>
             </table>
+        </div>
+        <div id="donacionesPaginacion" class="table-pagination" style="display:none;">
+            <button type="button" class="btn btn-secondary btn-sm" id="btnPaginaAnterior">Anterior</button>
+            <span id="textoPaginacionDonaciones"></span>
+            <button type="button" class="btn btn-secondary btn-sm" id="btnPaginaSiguiente">Siguiente</button>
         </div>
     </div>
 </main>
@@ -122,6 +132,8 @@
 
             <form id="formDonacion" action="${pageContext.request.contextPath}/donaciones" method="POST">
                 <input type="hidden" id="idDonacion" name="idDonacion">
+                <input type="hidden" id="accionDonacion" name="accion" value="registrar">
+                <input type="hidden" id="motivoEdicion" name="motivoEdicion">
 
                 <div class="form-grid">
                     <div class="form-group">
@@ -264,7 +276,7 @@
     </div>
 </div>
 
-<script src="${pageContext.request.contextPath}/js/donaciones.js?v=20260214-2"></script>
+<script src="${pageContext.request.contextPath}/js/donaciones.js?v=20260214-4"></script>
 
 </body>
 </html>

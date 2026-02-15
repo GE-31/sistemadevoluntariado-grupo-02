@@ -1,12 +1,18 @@
 const modalInventario = document.getElementById("modalInventario");
 const formInventario = document.getElementById("formInventario");
 const modalMovimiento = document.getElementById("modalMovimiento");
+const PAGINA_TAMANO_INVENTARIO = 5;
+let paginaActualInventario = 1;
+let totalPaginasInventario = 1;
+let inventarioFiltradoActual = [];
 let editingIdInventario = null;
 
 document.addEventListener("DOMContentLoaded", () => {
     configurarFiltros();
+    configurarPaginacionInventario();
     cargarStockBajo();
     configurarUnidadMedida();
+    filtrarInventario();
 });
 
 function configurarFiltros() {
@@ -169,6 +175,7 @@ async function guardarMovimiento(event) {
 }
 
 async function filtrarInventario() {
+    paginaActualInventario = 1;
     const q = document.getElementById("filtroQ")?.value || "";
     const categoria = document.getElementById("filtroCategoria")?.value || "";
     const estado = document.getElementById("filtroEstado")?.value || "";
@@ -202,12 +209,27 @@ function renderTablaInventario(data) {
     const tbody = document.getElementById("tbodyInventario");
     if (!tbody) return;
 
-    if (!data || data.length === 0) {
+    inventarioFiltradoActual = Array.isArray(data) ? data : [];
+
+    if (inventarioFiltradoActual.length === 0) {
         tbody.innerHTML = '<tr><td colspan="8" class="no-data">No hay items que coincidan con los filtros</td></tr>';
+        actualizarPaginacionInventario();
         return;
     }
 
-    tbody.innerHTML = data.map((item) => {
+    totalPaginasInventario = Math.max(1, Math.ceil(inventarioFiltradoActual.length / PAGINA_TAMANO_INVENTARIO));
+    if (paginaActualInventario > totalPaginasInventario) {
+        paginaActualInventario = totalPaginasInventario;
+    }
+    if (paginaActualInventario < 1) {
+        paginaActualInventario = 1;
+    }
+
+    const inicio = (paginaActualInventario - 1) * PAGINA_TAMANO_INVENTARIO;
+    const fin = inicio + PAGINA_TAMANO_INVENTARIO;
+    const paginaData = inventarioFiltradoActual.slice(inicio, fin);
+
+    tbody.innerHTML = paginaData.map((item) => {
         const stockActual = parseFloat(item.stockActual || 0);
         const stockMinimo = parseFloat(item.stockMinimo || 0);
         const stockClass = stockActual <= stockMinimo ? "stock-bajo" : "stock-ok";
@@ -240,6 +262,8 @@ function renderTablaInventario(data) {
             </tr>
         `;
     }).join("");
+
+    actualizarPaginacionInventario();
 }
 
 async function cargarStockBajo() {
@@ -307,4 +331,43 @@ function asignarUnidadMedida(valor) {
             inputOtro.value = unidad;
         }
     }
+}
+
+function configurarPaginacionInventario() {
+    const btnAnterior = document.getElementById("btnInventarioAnterior");
+    const btnSiguiente = document.getElementById("btnInventarioSiguiente");
+    if (!btnAnterior || !btnSiguiente) return;
+
+    btnAnterior.addEventListener("click", () => {
+        if (paginaActualInventario > 1) {
+            paginaActualInventario -= 1;
+            renderTablaInventario(inventarioFiltradoActual);
+        }
+    });
+
+    btnSiguiente.addEventListener("click", () => {
+        if (paginaActualInventario < totalPaginasInventario) {
+            paginaActualInventario += 1;
+            renderTablaInventario(inventarioFiltradoActual);
+        }
+    });
+}
+
+function actualizarPaginacionInventario() {
+    const contenedor = document.getElementById("inventarioPaginacion");
+    const btnAnterior = document.getElementById("btnInventarioAnterior");
+    const btnSiguiente = document.getElementById("btnInventarioSiguiente");
+    const texto = document.getElementById("textoPaginacionInventario");
+    if (!contenedor || !btnAnterior || !btnSiguiente || !texto) return;
+
+    if (!inventarioFiltradoActual || inventarioFiltradoActual.length === 0) {
+        contenedor.style.display = "none";
+        return;
+    }
+
+    totalPaginasInventario = Math.max(1, Math.ceil(inventarioFiltradoActual.length / PAGINA_TAMANO_INVENTARIO));
+    texto.textContent = `Pagina ${paginaActualInventario} de ${totalPaginasInventario}`;
+    contenedor.style.display = totalPaginasInventario > 1 ? "flex" : "none";
+    btnAnterior.disabled = paginaActualInventario === 1;
+    btnSiguiente.disabled = paginaActualInventario === totalPaginasInventario;
 }

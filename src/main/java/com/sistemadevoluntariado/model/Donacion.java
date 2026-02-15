@@ -25,6 +25,9 @@ public class Donacion {
     private String itemCategoria;
     private String itemUnidadMedida;
     private Double itemStockMinimo;
+    private String estado;
+    private String anuladoEn;
+    private String motivoAnulacion;
 
     public Donacion() {}
 
@@ -211,5 +214,29 @@ public class Donacion {
 
     public void setItemStockMinimo(Double itemStockMinimo) {
         this.itemStockMinimo = itemStockMinimo;
+    }
+
+    public String getEstado() {
+        return estado;
+    }
+
+    public void setEstado(String estado) {
+        this.estado = estado;
+    }
+
+    public String getAnuladoEn() {
+        return anuladoEn;
+    }
+
+    public void setAnuladoEn(String anuladoEn) {
+        this.anuladoEn = anuladoEn;
+    }
+
+    public String getMotivoAnulacion() {
+        return motivoAnulacion;
+    }
+
+    public void setMotivoAnulacion(String motivoAnulacion) {
+        this.motivoAnulacion = motivoAnulacion;
     }
 }

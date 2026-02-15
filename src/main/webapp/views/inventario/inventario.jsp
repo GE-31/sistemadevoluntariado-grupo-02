@@ -152,6 +152,11 @@
                 </tbody>
             </table>
         </div>
+        <div id="inventarioPaginacion" class="table-pagination" style="display:none;">
+            <button type="button" class="btn btn-secondary btn-sm" id="btnInventarioAnterior">Anterior</button>
+            <span id="textoPaginacionInventario"></span>
+            <button type="button" class="btn btn-secondary btn-sm" id="btnInventarioSiguiente">Siguiente</button>
+        </div>
     </div>
 </main>
 
@@ -277,6 +282,6 @@
     </div>
 </div>
 
-<script src="${pageContext.request.contextPath}/js/inventario.js"></script>
+<script src="${pageContext.request.contextPath}/js/inventario.js?v=20260214-2"></script>
 </body>
 </html>

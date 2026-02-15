@@ -41,12 +41,55 @@ public class DonacionDAO {
                 }
                 d.setItemNombre(rs.getString("item_nombre"));
                 d.setItemUnidadMedida(rs.getString("item_unidad_medida"));
+                d.setEstado(rs.getString("estado"));
                 lista.add(d);
             }
         } catch (Exception e) {
             e.printStackTrace();
         }
         return lista;
+    }
+
+    public Donacion obtenerPorId(int idDonacion) {
+        try (CallableStatement cs = cx.prepareCall("{CALL sp_obtener_donacion_detalle(?)}")) {
+            cs.setInt(1, idDonacion);
+            try (ResultSet rs = cs.executeQuery()) {
+                if (rs.next()) {
+                    Donacion d = new Donacion();
+                    d.setIdDonacion(rs.getInt("id_donacion"));
+                    d.setCantidad(rs.getDouble("cantidad"));
+                    d.setDescripcion(rs.getString("descripcion"));
+                    d.setIdTipoDonacion(rs.getInt("id_tipo_donacion"));
+                    d.setTipoDonacion(rs.getString("tipoDonacion"));
+                    d.setIdActividad(rs.getInt("id_actividad"));
+                    d.setActividad(rs.getString("actividad"));
+                    d.setIdUsuarioRegistro(rs.getInt("id_usuario_registro"));
+                    d.setUsuarioRegistro(rs.getString("usuarioRegistro"));
+                    d.setDonacionAnonima(rs.getInt("donacion_anonima") == 1);
+                    d.setTipoDonante(rs.getString("tipo_donante"));
+                    d.setNombreDonante(rs.getString("nombre_donante"));
+                    d.setCorreoDonante(rs.getString("correo_donante"));
+                    d.setTelefonoDonante(rs.getString("telefono_donante"));
+                    d.setEstado(rs.getString("estado"));
+
+                    int idItem = rs.getInt("id_item");
+                    if (!rs.wasNull()) {
+                        d.setIdItem(idItem);
+                    }
+                    d.setItemNombre(rs.getString("item_nombre"));
+                    d.setItemCategoria(rs.getString("item_categoria"));
+                    d.setItemUnidadMedida(rs.getString("item_unidad_medida"));
+                    d.setCantidadItem(rs.getDouble("cantidad_item"));
+                    if (rs.wasNull()) {
+                        d.setCantidadItem(null);
+                    }
+                    return d;
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return null;
     }
 
     public boolean guardar(Donacion d) {
@@ -71,6 +114,40 @@ public class DonacionDAO {
             cs.setString(14, d.getNombreDonante());
             cs.setString(15, d.getCorreoDonante());
             cs.setString(16, d.getTelefonoDonante());
+            cs.execute();
+            return true;
+        } catch (Exception e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    public boolean actualizar(Donacion d) {
+        try (CallableStatement cs = cx.prepareCall("{CALL sp_actualizar_donacion_inventario(?,?,?,?,?,?,?,?,?,?,?)}")) {
+            cs.setInt(1, d.getIdDonacion());
+            cs.setDouble(2, d.getCantidad() != null ? d.getCantidad() : 0d);
+            cs.setString(3, d.getDescripcion());
+            cs.setInt(4, d.getIdActividad());
+            cs.setInt(5, d.isDonacionAnonima() ? 1 : 0);
+            cs.setString(6, d.getTipoDonante());
+            cs.setString(7, d.getNombreDonante());
+            cs.setString(8, d.getCorreoDonante());
+            cs.setString(9, d.getTelefonoDonante());
+            cs.setInt(10, d.getIdUsuarioRegistro());
+            cs.setString(11, d.getMotivoAnulacion());
+            cs.execute();
+            return true;
+        } catch (Exception e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    public boolean anular(int idDonacion, int idUsuario, String motivo) {
+        try (CallableStatement cs = cx.prepareCall("{CALL sp_anular_donacion_inventario(?,?,?)}")) {
+            cs.setInt(1, idDonacion);
+            cs.setInt(2, idUsuario);
+            cs.setString(3, motivo);
             cs.execute();
             return true;
         } catch (Exception e) {

@@ -2,6 +2,8 @@ package com.sistemadevoluntariado.controller;
 
 import java.io.IOException;
 
+import com.google.gson.Gson;
+import com.google.gson.JsonObject;
 import com.sistemadevoluntariado.dao.DonacionDAO;
 import com.sistemadevoluntariado.model.Donacion;
 import com.sistemadevoluntariado.model.Usuario;
@@ -16,13 +18,44 @@ import jakarta.servlet.http.HttpServletResponse;
 public class DonacionServlet extends HttpServlet {
 
     DonacionDAO donacionDAO = new DonacionDAO();
+    private final Gson gson = new Gson();
 
     @Override
     protected void doGet(HttpServletRequest req, HttpServletResponse resp)
             throws ServletException, IOException {
+        Usuario user = (Usuario) req.getSession().getAttribute("usuarioLogeado");
+        if (user == null) {
+            resp.sendRedirect(req.getContextPath() + "/login");
+            return;
+        }
+
+        String accion = req.getParameter("accion");
+        if ("obtener".equals(accion)) {
+            resp.setContentType("application/json");
+            resp.setCharacterEncoding("UTF-8");
+            Integer id = parseInteger(req.getParameter("id"));
+            if (id == null || id <= 0) {
+                JsonObject out = new JsonObject();
+                out.addProperty("ok", false);
+                out.addProperty("message", "ID de donacion invalido");
+                resp.getWriter().write(out.toString());
+                return;
+            }
+            Donacion d = donacionDAO.obtenerPorId(id);
+            if (d == null) {
+                JsonObject out = new JsonObject();
+                out.addProperty("ok", false);
+                out.addProperty("message", "Donacion no encontrada");
+                resp.getWriter().write(out.toString());
+                return;
+            }
+            resp.getWriter().write(gson.toJson(d));
+            return;
+        }
 
         req.setAttribute("page", "donaciones");
         req.setAttribute("donaciones", donacionDAO.listar());
+        req.setAttribute("usuario", user);
 
         req.getRequestDispatcher("/views/donaciones/donaciones.jsp")
                 .forward(req, resp);
@@ -35,6 +68,15 @@ public class DonacionServlet extends HttpServlet {
         Usuario user = (Usuario) req.getSession().getAttribute("usuarioLogeado");
         if (user == null) {
             resp.sendRedirect(req.getContextPath() + "/login");
+            return;
+        }
+
+        String accion = req.getParameter("accion");
+        if ("anular".equals(accion)) {
+            procesarAnulacion(req, resp, user);
+            return;
+        } else if ("editar".equals(accion)) {
+            procesarEdicion(req, resp, user);
             return;
         }
 
@@ -74,6 +116,74 @@ public class DonacionServlet extends HttpServlet {
 
         donacionDAO.guardar(d);
         resp.sendRedirect("donaciones");
+    }
+
+    private void procesarEdicion(HttpServletRequest req, HttpServletResponse resp, Usuario user)
+            throws IOException {
+        Integer idDonacion = parseInteger(req.getParameter("idDonacion"));
+        if (idDonacion == null || idDonacion <= 0) {
+            resp.sendRedirect("donaciones");
+            return;
+        }
+
+        Donacion actual = donacionDAO.obtenerPorId(idDonacion);
+        if (actual == null || "ANULADO".equalsIgnoreCase(actual.getEstado())) {
+            resp.sendRedirect("donaciones");
+            return;
+        }
+
+        Donacion d = new Donacion();
+        d.setIdDonacion(idDonacion);
+        d.setIdUsuarioRegistro(user.getIdUsuario());
+
+        double nuevaCantidad = parseDouble(req.getParameter("cantidad"));
+        if (actual.getIdTipoDonacion() == 1 && nuevaCantidad > 0) {
+            d.setCantidad(nuevaCantidad);
+        } else {
+            d.setCantidad(actual.getCantidad());
+        }
+
+        d.setDescripcion(trim(req.getParameter("descripcion")));
+        Integer idActividad = parseInteger(req.getParameter("actividad"));
+        d.setIdActividad(idActividad != null && idActividad > 0 ? idActividad : actual.getIdActividad());
+
+        boolean donacionAnonima = "1".equals(req.getParameter("donacionAnonima"));
+        d.setDonacionAnonima(donacionAnonima);
+        if (!donacionAnonima) {
+            d.setTipoDonante(trim(req.getParameter("tipoDonante")));
+            d.setNombreDonante(trim(req.getParameter("nombreDonante")));
+            d.setCorreoDonante(trim(req.getParameter("correoDonante")));
+            d.setTelefonoDonante(trim(req.getParameter("telefonoDonante")));
+        }
+        d.setMotivoAnulacion(trim(req.getParameter("motivoEdicion")));
+
+        donacionDAO.actualizar(d);
+        resp.sendRedirect("donaciones");
+    }
+
+    private void procesarAnulacion(HttpServletRequest req, HttpServletResponse resp, Usuario user)
+            throws IOException {
+        resp.setContentType("application/json");
+        resp.setCharacterEncoding("UTF-8");
+        JsonObject out = new JsonObject();
+
+        Integer idDonacion = parseInteger(req.getParameter("idDonacion"));
+        if (idDonacion == null || idDonacion <= 0) {
+            out.addProperty("ok", false);
+            out.addProperty("message", "ID de donacion invalido");
+            resp.getWriter().write(out.toString());
+            return;
+        }
+
+        String motivo = trim(req.getParameter("motivo"));
+        if (motivo == null || motivo.isEmpty()) {
+            motivo = "Anulacion manual";
+        }
+
+        boolean ok = donacionDAO.anular(idDonacion, user.getIdUsuario(), motivo);
+        out.addProperty("ok", ok);
+        out.addProperty("message", ok ? "Donacion anulada" : "No se pudo anular la donacion");
+        resp.getWriter().write(out.toString());
     }
 
     private Double parseDouble(String value) {

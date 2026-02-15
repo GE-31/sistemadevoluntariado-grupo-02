@@ -156,6 +156,14 @@
     background: #f9fbfd;
 }
 
+.table-pagination {
+    margin-top: 0.9rem;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.75rem;
+}
+
 .item-obs {
     font-size: 0.78rem;
     color: #6b7280;

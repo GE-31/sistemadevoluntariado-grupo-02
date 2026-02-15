@@ -58,6 +58,13 @@ CREATE INDEX idx_movimiento_creado_en ON inventario_movimiento(creado_en);
 ALTER TABLE donacion
     MODIFY cantidad DECIMAL(10,2) NULL;
 
+ALTER TABLE donacion
+    ADD COLUMN IF NOT EXISTS estado VARCHAR(20) NOT NULL DEFAULT 'ACTIVO',
+    ADD COLUMN IF NOT EXISTS anulado_en DATETIME NULL,
+    ADD COLUMN IF NOT EXISTS id_usuario_anula INT NULL,
+    ADD COLUMN IF NOT EXISTS motivo_anulacion VARCHAR(255) NULL,
+    ADD COLUMN IF NOT EXISTS actualizado_en DATETIME NULL;
+
 DELIMITER $$
 
 DROP PROCEDURE IF EXISTS sp_listar_inventario $$
@@ -386,7 +393,8 @@ BEGIN
         ddet.id_item,
         ddet.cantidad AS cantidad_item,
         ii.nombre AS item_nombre,
-        ii.unidad_medida AS item_unidad_medida
+        ii.unidad_medida AS item_unidad_medida,
+        d.estado
     FROM donacion d
     LEFT JOIN tipo_donacion td ON d.id_tipo_donacion = td.id_tipo_donacion
     LEFT JOIN actividades a ON d.id_actividad = a.id_actividad
@@ -395,7 +403,223 @@ BEGIN
     LEFT JOIN donante dnt ON ddon.id_donante = dnt.id_donante
     LEFT JOIN donacion_detalle ddet ON d.id_donacion = ddet.id_donacion
     LEFT JOIN inventario_item ii ON ddet.id_item = ii.id_item
+    WHERE COALESCE(d.estado, 'ACTIVO') = 'ACTIVO'
     ORDER BY d.registrado_en DESC;
+END $$
+
+DROP PROCEDURE IF EXISTS sp_obtener_donacion_detalle $$
+CREATE PROCEDURE sp_obtener_donacion_detalle(IN p_id_donacion INT)
+BEGIN
+    SELECT
+        d.id_donacion,
+        d.cantidad,
+        d.descripcion,
+        d.id_tipo_donacion,
+        td.nombre AS tipoDonacion,
+        d.id_actividad,
+        a.nombre AS actividad,
+        d.id_usuario_registro,
+        CONCAT(u.nombres, ' ', u.apellidos) AS usuarioRegistro,
+        CASE WHEN ddon.id_donante IS NULL THEN 1 ELSE 0 END AS donacion_anonima,
+        UPPER(COALESCE(dnt.tipo, 'PERSONA')) AS tipo_donante,
+        dnt.nombre AS nombre_donante,
+        dnt.correo AS correo_donante,
+        dnt.telefono AS telefono_donante,
+        ddet.id_item,
+        ddet.cantidad AS cantidad_item,
+        ii.nombre AS item_nombre,
+        ii.categoria AS item_categoria,
+        ii.unidad_medida AS item_unidad_medida,
+        COALESCE(d.estado, 'ACTIVO') AS estado
+    FROM donacion d
+    LEFT JOIN tipo_donacion td ON d.id_tipo_donacion = td.id_tipo_donacion
+    LEFT JOIN actividades a ON d.id_actividad = a.id_actividad
+    LEFT JOIN usuario u ON d.id_usuario_registro = u.id_usuario
+    LEFT JOIN donacion_donante ddon ON d.id_donacion = ddon.id_donacion
+    LEFT JOIN donante dnt ON ddon.id_donante = dnt.id_donante
+    LEFT JOIN donacion_detalle ddet ON d.id_donacion = ddet.id_donacion
+    LEFT JOIN inventario_item ii ON ddet.id_item = ii.id_item
+    WHERE d.id_donacion = p_id_donacion
+    LIMIT 1;
+END $$
+
+DROP PROCEDURE IF EXISTS sp_actualizar_donacion_inventario $$
+CREATE PROCEDURE sp_actualizar_donacion_inventario(
+    IN p_id_donacion INT,
+    IN p_cantidad DECIMAL(10,2),
+    IN p_descripcion VARCHAR(150),
+    IN p_id_actividad INT,
+    IN p_donacion_anonima TINYINT,
+    IN p_donante_tipo VARCHAR(20),
+    IN p_donante_nombre VARCHAR(150),
+    IN p_donante_correo VARCHAR(100),
+    IN p_donante_telefono VARCHAR(30),
+    IN p_id_usuario_edicion INT,
+    IN p_motivo_edicion VARCHAR(255)
+)
+BEGIN
+    DECLARE v_tipo INT;
+    DECLARE v_id_donante INT DEFAULT NULL;
+    DECLARE v_tipo_donante VARCHAR(20) DEFAULT NULL;
+
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        RESIGNAL;
+    END;
+
+    START TRANSACTION;
+
+    SELECT id_tipo_donacion INTO v_tipo
+    FROM donacion
+    WHERE id_donacion = p_id_donacion
+      AND COALESCE(estado, 'ACTIVO') = 'ACTIVO'
+    FOR UPDATE;
+
+    IF v_tipo IS NULL THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'La donacion no existe o ya fue anulada.';
+    END IF;
+
+    IF v_tipo = 1 THEN
+        IF p_cantidad IS NULL OR p_cantidad <= 0 THEN
+            SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'El monto para donaciones de dinero debe ser mayor a cero.';
+        END IF;
+    END IF;
+
+    UPDATE donacion
+    SET cantidad = CASE WHEN v_tipo = 1 THEN p_cantidad ELSE cantidad END,
+        descripcion = p_descripcion,
+        id_actividad = p_id_actividad,
+        actualizado_en = NOW()
+    WHERE id_donacion = p_id_donacion;
+
+    IF IFNULL(p_donacion_anonima, 0) = 1 THEN
+        DELETE FROM donacion_donante WHERE id_donacion = p_id_donacion;
+    ELSE
+        IF p_donante_nombre IS NULL OR TRIM(p_donante_nombre) = '' THEN
+            SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Debe indicar el nombre del donante o marcar donacion anonima.';
+        END IF;
+
+        SET v_tipo_donante = CASE UPPER(TRIM(IFNULL(p_donante_tipo, 'PERSONA')))
+            WHEN 'EMPRESA' THEN 'Empresa'
+            WHEN 'GRUPO' THEN 'Grupo'
+            ELSE 'Persona'
+        END;
+
+        SELECT dnt.id_donante
+        INTO v_id_donante
+        FROM donante dnt
+        WHERE LOWER(TRIM(dnt.nombre)) = LOWER(TRIM(p_donante_nombre))
+          AND dnt.tipo = v_tipo_donante
+          AND (
+                IFNULL(TRIM(dnt.correo), '') = IFNULL(TRIM(p_donante_correo), '')
+                OR IFNULL(TRIM(dnt.telefono), '') = IFNULL(TRIM(p_donante_telefono), '')
+          )
+        LIMIT 1;
+
+        IF v_id_donante IS NULL THEN
+            INSERT INTO donante(tipo, nombre, correo, telefono)
+            VALUES(v_tipo_donante, TRIM(p_donante_nombre), NULLIF(TRIM(p_donante_correo), ''), NULLIF(TRIM(p_donante_telefono), ''));
+            SET v_id_donante = LAST_INSERT_ID();
+        END IF;
+
+        DELETE FROM donacion_donante WHERE id_donacion = p_id_donacion;
+        INSERT INTO donacion_donante(id_donacion, id_donante)
+        VALUES(p_id_donacion, v_id_donante);
+    END IF;
+
+    COMMIT;
+END $$
+
+DROP PROCEDURE IF EXISTS sp_anular_donacion_inventario $$
+CREATE PROCEDURE sp_anular_donacion_inventario(
+    IN p_id_donacion INT,
+    IN p_id_usuario_anula INT,
+    IN p_motivo VARCHAR(255)
+)
+BEGIN
+    DECLARE v_tipo INT;
+    DECLARE v_item INT;
+    DECLARE v_cantidad DECIMAL(10,2);
+    DECLARE v_stock_anterior DECIMAL(10,2) DEFAULT 0;
+    DECLARE v_stock_nuevo DECIMAL(10,2) DEFAULT 0;
+
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        RESIGNAL;
+    END;
+
+    START TRANSACTION;
+
+    SELECT id_tipo_donacion
+    INTO v_tipo
+    FROM donacion
+    WHERE id_donacion = p_id_donacion
+    FOR UPDATE;
+
+    IF v_tipo IS NULL THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'La donacion no existe.';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM donacion
+        WHERE id_donacion = p_id_donacion
+          AND COALESCE(estado, 'ACTIVO') = 'ANULADO'
+    ) THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'La donacion ya esta anulada.';
+    END IF;
+
+    IF v_tipo = 2 THEN
+        SELECT id_item, cantidad
+        INTO v_item, v_cantidad
+        FROM donacion_detalle
+        WHERE id_donacion = p_id_donacion
+        LIMIT 1;
+
+        IF v_item IS NOT NULL AND v_cantidad IS NOT NULL AND v_cantidad > 0 THEN
+            SELECT stock_actual INTO v_stock_anterior
+            FROM inventario_item
+            WHERE id_item = v_item
+            FOR UPDATE;
+
+            IF v_stock_anterior < v_cantidad THEN
+                SIGNAL SQLSTATE '45000'
+                SET MESSAGE_TEXT = 'No hay stock suficiente para revertir la donacion.';
+            END IF;
+
+            SET v_stock_nuevo = v_stock_anterior - v_cantidad;
+
+            UPDATE inventario_item
+            SET stock_actual = v_stock_nuevo,
+                actualizado_en = NOW()
+            WHERE id_item = v_item;
+
+            INSERT INTO inventario_movimiento(
+                id_item, tipo_movimiento, motivo, cantidad, stock_anterior, stock_nuevo,
+                id_referencia, tabla_referencia, observacion, id_usuario, creado_en
+            ) VALUES(
+                v_item, 'SALIDA', 'ANULACION_DONACION', v_cantidad, v_stock_anterior, v_stock_nuevo,
+                p_id_donacion, 'donacion', CONCAT('Anulacion de donacion #', p_id_donacion, '. ', IFNULL(p_motivo, '')), p_id_usuario_anula, NOW()
+            );
+        END IF;
+    END IF;
+
+    UPDATE donacion
+    SET estado = 'ANULADO',
+        anulado_en = NOW(),
+        id_usuario_anula = p_id_usuario_anula,
+        motivo_anulacion = LEFT(IFNULL(p_motivo, 'Anulacion manual'), 255),
+        actualizado_en = NOW()
+    WHERE id_donacion = p_id_donacion;
+
+    COMMIT;
 END $$
 
 DELIMITER ;
