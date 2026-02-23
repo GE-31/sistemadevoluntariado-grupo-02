@@ -1,0 +1,98 @@
+﻿<%@ page language="java" contentType="text/html; charset=UTF-8" pageEncoding="UTF-8" %>
+<%@ page import="com.sistemadevoluntariado.entity.Usuario" %>
+<%
+    HttpSession ses = request.getSession(false);
+    Usuario usuario = (Usuario) (request.getAttribute("usuario") != null
+            ? request.getAttribute("usuario")
+            : (ses != null ? ses.getAttribute("usuarioLogeado") : null));
+    if (usuario == null) {
+        response.sendRedirect(request.getContextPath() + "/login");
+        return;
+    }
+    request.setAttribute("page", "reportes");
+%>
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Reportes - Sistema de Voluntariado</title>
+    <link rel="stylesheet" href="${pageContext.request.contextPath}/css/dashboard.css">
+    <link rel="stylesheet" href="${pageContext.request.contextPath}/css/reportes.css">
+</head>
+<body>
+<jsp:include page="/includes/sidebar.jsp" />
+<main class="main-content">
+    <jsp:include page="/includes/topbar.jsp" />
+    <div class="content-body">
+        <div class="donaciones-header">
+            <div>
+                <h1>Reportes</h1>
+                <p>Exporta datos profesionales a Excel (.xlsx). Selecciona filtros y descarga.</p>
+            </div>
+        </div>
+
+        <div class="reportes-panel" style="margin-top:18px;">
+            <section class="reportes-grid">
+                <div class="form-group">
+                    <label>Fecha inicio</label>
+                    <input type="date" id="fInicio" class="form-input">
+                </div>
+                <div class="form-group">
+                    <label>Fecha fin</label>
+                    <input type="date" id="fFin" class="form-input">
+                </div>
+                <div class="form-group">
+                    <label>Tipo de donación</label>
+                    <select id="fTipoDonacion" class="form-input">
+                        <option value="">Todos</option>
+                        <option value="1">Dinero</option>
+                        <option value="2">En especie</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Tipo de donante</label>
+                    <select id="fTipoDonante" class="form-input">
+                        <option value="">Todos</option>
+                        <option value="PERSONA">Persona</option>
+                        <option value="EMPRESA">Empresa</option>
+                        <option value="GRUPO">Grupo</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>&nbsp;</label>
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <input type="checkbox" id="fIncluirAnuladas" checked>
+                        <label for="fIncluirAnuladas" style="margin:0; font-weight:600; font-size:0.95rem;">Incluir anuladas</label>
+                    </div>
+                </div>
+            </section>
+
+            <div style="margin-top:12px; display:flex; gap:12px; align-items:center;">
+                <button id="btnBuscarReportes" class="btn-search">🔍 Buscar</button>
+                <button id="btnExportDonacionesMain" class="btn-export">📥 Exportar a Excel</button>
+                <span class="reportes-note">El archivo incluirá columnas: Fecha, Tipo, Monto, Donante, Identificadores, Contacto, Actividad y Estado.</span>
+            </div>
+        </div>
+        <!-- resultados en ancho completo -->
+        <div id="reportesResults" style="margin-top:18px;"></div>
+    </div>
+</main>
+
+<script src="${pageContext.request.contextPath}/js/reportes.js?v=20260215-1"></script>
+<script>
+document.getElementById('btnExportDonacionesMain')?.addEventListener('click', function() {
+    const params = new URLSearchParams();
+    params.append('accion', 'donaciones');
+    const fi = document.getElementById('fInicio')?.value;
+    const ff = document.getElementById('fFin')?.value;
+    const td = document.getElementById('fTipoDonacion')?.value;
+    const tdon = document.getElementById('fTipoDonante')?.value;
+    if (fi) params.append('fechaInicio', fi);
+    if (ff) params.append('fechaFin', ff);
+    if (td) params.append('tipoDonacion', td);
+    if (tdon) params.append('tipoDonante', tdon);
+    window.location = '${pageContext.request.contextPath}/reportes?' + params.toString();
+});
+</script>
+</body>
+</html>
