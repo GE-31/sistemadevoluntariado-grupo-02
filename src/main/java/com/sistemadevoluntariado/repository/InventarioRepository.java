@@ -11,6 +11,7 @@ import com.sistemadevoluntariado.entity.InventarioItem;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
 import jakarta.persistence.EntityTransaction;
+import jakarta.persistence.Query;
 import jakarta.persistence.TypedQuery;
 
 public class InventarioRepository {
@@ -22,7 +23,9 @@ public class InventarioRepository {
     public List<InventarioItem> listar() {
         EntityManager em = emf().createEntityManager();
         try {
-            return em.createQuery("SELECT i FROM InventarioItem i ORDER BY i.idItem DESC", InventarioItem.class).getResultList();
+            @SuppressWarnings("unchecked")
+            List<Object[]> rows = em.createNativeQuery("{CALL sp_listar_inventario()}").getResultList();
+            return rows.stream().map(this::mapInventarioRow).toList();
         } catch (Exception e) {
             logger.log(Level.SEVERE, "Error al listar inventario", e);
             return List.of();
@@ -34,17 +37,14 @@ public class InventarioRepository {
     public List<InventarioItem> filtrar(String q, String categoria, String estado, boolean stockBajo) {
         EntityManager em = emf().createEntityManager();
         try {
-            StringBuilder jpql = new StringBuilder("SELECT i FROM InventarioItem i WHERE 1=1");
-            if (q != null && !q.isEmpty()) jpql.append(" AND (LOWER(i.nombre) LIKE :q OR LOWER(i.categoria) LIKE :q)");
-            if (categoria != null && !categoria.isEmpty()) jpql.append(" AND i.categoria = :categoria");
-            if (estado != null && !estado.isEmpty()) jpql.append(" AND i.estado = :estado");
-            if (stockBajo) jpql.append(" AND i.stockActual <= i.stockMinimo");
-            jpql.append(" ORDER BY i.idItem DESC");
-            TypedQuery<InventarioItem> query = em.createQuery(jpql.toString(), InventarioItem.class);
-            if (q != null && !q.isEmpty()) query.setParameter("q", "%" + q.toLowerCase() + "%");
-            if (categoria != null && !categoria.isEmpty()) query.setParameter("categoria", categoria);
-            if (estado != null && !estado.isEmpty()) query.setParameter("estado", estado);
-            return query.getResultList();
+            Query query = em.createNativeQuery("{CALL sp_filtrar_inventario(?,?,?,?)}");
+            query.setParameter(1, q);
+            query.setParameter(2, categoria);
+            query.setParameter(3, estado);
+            query.setParameter(4, stockBajo ? 1 : 0);
+            @SuppressWarnings("unchecked")
+            List<Object[]> rows = query.getResultList();
+            return rows.stream().map(this::mapInventarioRow).toList();
         } catch (Exception e) {
             logger.log(Level.SEVERE, "Error al filtrar inventario", e);
             return List.of();
@@ -56,7 +56,11 @@ public class InventarioRepository {
     public InventarioItem obtenerPorId(int id) {
         EntityManager em = emf().createEntityManager();
         try {
-            return em.find(InventarioItem.class, id);
+            Query query = em.createNativeQuery("{CALL sp_obtener_item_inventario(?)}");
+            query.setParameter(1, id);
+            @SuppressWarnings("unchecked")
+            List<Object[]> rows = query.getResultList();
+            return rows.isEmpty() ? null : mapInventarioRow(rows.get(0));
         } catch (Exception e) {
             logger.log(Level.SEVERE, "Error al obtener item inventario", e);
             return null;
@@ -67,14 +71,16 @@ public class InventarioRepository {
 
     public int registrar(InventarioItem item) {
         EntityManager em = emf().createEntityManager();
-        EntityTransaction tx = em.getTransaction();
         try {
-            tx.begin();
-            em.persist(item);
-            tx.commit();
-            return item.getIdItem();
+            Query query = em.createNativeQuery("{CALL sp_crear_item_inventario(?,?,?,?,?)}");
+            query.setParameter(1, item.getNombre());
+            query.setParameter(2, item.getCategoria());
+            query.setParameter(3, item.getUnidadMedida());
+            query.setParameter(4, item.getStockMinimo());
+            query.setParameter(5, item.getObservacion());
+            Object result = query.getSingleResult();
+            return result != null ? ((Number) result).intValue() : 0;
         } catch (Exception e) {
-            if (tx.isActive()) tx.rollback();
             logger.log(Level.SEVERE, "Error al registrar item inventario", e);
             throw new RuntimeException("Error al registrar item: " + e.getMessage(), e);
         } finally {
@@ -84,14 +90,17 @@ public class InventarioRepository {
 
     public boolean actualizar(InventarioItem item) {
         EntityManager em = emf().createEntityManager();
-        EntityTransaction tx = em.getTransaction();
         try {
-            tx.begin();
-            em.merge(item);
-            tx.commit();
+            Query query = em.createNativeQuery("{CALL sp_actualizar_item_inventario(?,?,?,?,?,?)}");
+            query.setParameter(1, item.getIdItem());
+            query.setParameter(2, item.getNombre());
+            query.setParameter(3, item.getCategoria());
+            query.setParameter(4, item.getUnidadMedida());
+            query.setParameter(5, item.getStockMinimo());
+            query.setParameter(6, item.getObservacion());
+            query.getResultList();
             return true;
         } catch (Exception e) {
-            if (tx.isActive()) tx.rollback();
             logger.log(Level.SEVERE, "Error al actualizar item inventario", e);
             return false;
         } finally {
@@ -101,50 +110,17 @@ public class InventarioRepository {
 
     public boolean registrarMovimiento(int idItem, String tipo, String motivo, double cantidad, String observacion, int idUsuario) {
         EntityManager em = emf().createEntityManager();
-        EntityTransaction tx = em.getTransaction();
         try {
-            tx.begin();
-            String tipoUpper = tipo != null ? tipo.trim().toUpperCase() : "";
-            if (!tipoUpper.equals("ENTRADA") && !tipoUpper.equals("SALIDA")) {
-                throw new IllegalArgumentException("Tipo de movimiento inv\u00e1lido: " + tipo);
-            }
-            // Obtener stock actual con bloqueo pesimista
-            Object stockObj = em.createNativeQuery(
-                "SELECT stock_actual FROM inventario_item WHERE id_item = ?1 FOR UPDATE")
-                .setParameter(1, idItem)
-                .getSingleResult();
-            double stockAnterior = stockObj != null ? ((Number)stockObj).doubleValue() : 0.0;
-            double stockNuevo;
-            if (tipoUpper.equals("ENTRADA")) {
-                stockNuevo = stockAnterior + cantidad;
-            } else {
-                if (stockAnterior < cantidad) throw new IllegalStateException("Stock insuficiente");
-                stockNuevo = stockAnterior - cantidad;
-            }
-            // Actualizar stock
-            em.createNativeQuery(
-                "UPDATE inventario_item SET stock_actual = ?1, actualizado_en = NOW() WHERE id_item = ?2")
-                .setParameter(1, stockNuevo)
-                .setParameter(2, idItem)
-                .executeUpdate();
-            // Registrar movimiento
-            em.createNativeQuery(
-                "INSERT INTO inventario_movimiento " +
-                "(id_item, tipo_movimiento, motivo, cantidad, stock_anterior, stock_nuevo, observacion, id_usuario, creado_en) " +
-                "VALUES (?1, ?2, UPPER(TRIM(?3)), ?4, ?5, ?6, ?7, ?8, NOW())")
-                .setParameter(1, idItem)
-                .setParameter(2, tipoUpper)
-                .setParameter(3, motivo != null ? motivo : "MANUAL")
-                .setParameter(4, cantidad)
-                .setParameter(5, stockAnterior)
-                .setParameter(6, stockNuevo)
-                .setParameter(7, observacion)
-                .setParameter(8, idUsuario)
-                .executeUpdate();
-            tx.commit();
+            Query query = em.createNativeQuery("{CALL sp_registrar_movimiento_inventario(?,?,?,?,?,?)}");
+            query.setParameter(1, idItem);
+            query.setParameter(2, tipo);
+            query.setParameter(3, motivo);
+            query.setParameter(4, cantidad);
+            query.setParameter(5, observacion);
+            query.setParameter(6, idUsuario);
+            query.getResultList();
             return true;
         } catch (Exception e) {
-            if (tx.isActive()) tx.rollback();
             logger.log(Level.SEVERE, "Error al registrar movimiento inventario", e);
             return false;
         } finally {
@@ -154,17 +130,13 @@ public class InventarioRepository {
 
     public boolean cambiarEstado(int idItem, String estado) {
         EntityManager em = emf().createEntityManager();
-        EntityTransaction tx = em.getTransaction();
         try {
-            tx.begin();
-            em.createQuery("UPDATE InventarioItem i SET i.estado = :estado WHERE i.idItem = :id")
-                .setParameter("estado", estado != null ? estado : "INACTIVO")
-                .setParameter("id", idItem)
-                .executeUpdate();
-            tx.commit();
+            Query query = em.createNativeQuery("{CALL sp_cambiar_estado_inventario(?,?)}");
+            query.setParameter(1, idItem);
+            query.setParameter(2, estado != null ? estado : "INACTIVO");
+            query.getResultList();
             return true;
         } catch (Exception e) {
-            if (tx.isActive()) tx.rollback();
             logger.log(Level.SEVERE, "Error al cambiar estado inventario", e);
             return false;
         } finally {
@@ -175,10 +147,8 @@ public class InventarioRepository {
     public int contarStockBajo() {
         EntityManager em = emf().createEntityManager();
         try {
-            Long count = em.createQuery(
-                "SELECT COUNT(i) FROM InventarioItem i WHERE i.stockActual <= i.stockMinimo AND i.estado = 'ACTIVO'",
-                Long.class).getSingleResult();
-            return count.intValue();
+            Object result = em.createNativeQuery("{CALL sp_contar_stock_bajo()}").getSingleResult();
+            return result != null ? ((Number) result).intValue() : 0;
         } catch (Exception e) {
             logger.log(Level.SEVERE, "Error al contar stock bajo", e);
             return 0;
@@ -264,5 +234,20 @@ public class InventarioRepository {
         } finally {
             em.close();
         }
+    }
+
+    private InventarioItem mapInventarioRow(Object[] row) {
+        InventarioItem item = new InventarioItem();
+        item.setIdItem(row[0] != null ? ((Number) row[0]).intValue() : 0);
+        item.setNombre(row[1] != null ? String.valueOf(row[1]) : null);
+        item.setCategoria(row[2] != null ? String.valueOf(row[2]) : null);
+        item.setUnidadMedida(row[3] != null ? String.valueOf(row[3]) : null);
+        item.setStockActual(row[4] != null ? ((Number) row[4]).doubleValue() : 0.0);
+        item.setStockMinimo(row[5] != null ? ((Number) row[5]).doubleValue() : 0.0);
+        item.setEstado(row[6] != null ? String.valueOf(row[6]) : null);
+        item.setObservacion(row[7] != null ? String.valueOf(row[7]) : null);
+        item.setCreadoEn(row[8] != null ? String.valueOf(row[8]) : null);
+        item.setActualizadoEn(row[9] != null ? String.valueOf(row[9]) : null);
+        return item;
     }
 }

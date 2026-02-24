@@ -11,6 +11,7 @@ import com.sistemadevoluntariado.entity.Donacion;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
 import jakarta.persistence.EntityTransaction;
+import jakarta.persistence.Query;
 
 public class DonacionRepository {
     private static final Logger logger = Logger.getLogger(DonacionRepository.class.getName());
@@ -88,10 +89,10 @@ public class DonacionRepository {
     public Donacion obtenerPorId(int id) {
         EntityManager em = emf().createEntityManager();
         try {
-            List<Object[]> rows = em.createNativeQuery(SQL_BASE + "WHERE d.id_donacion = ?1")
-                .setParameter(1, id)
-                .getResultList();
-            return rows.isEmpty() ? null : mapear(rows.get(0));
+            Query query = em.createNativeQuery("{CALL sp_obtener_donacion_detalle(?)}");
+            query.setParameter(1, id);
+            List<Object[]> rows = query.getResultList();
+            return rows.isEmpty() ? null : mapearDetalle(rows.get(0));
         } catch (Exception e) {
             logger.log(Level.SEVERE, "Error al obtener donacion por ID", e);
             return null;
@@ -105,11 +106,17 @@ public class DonacionRepository {
         EntityTransaction tx = em.getTransaction();
         try {
             tx.begin();
-            if (d.getEstado() == null || d.getEstado().isEmpty()) d.setEstado("PENDIENTE");
-            em.persist(d);
-            em.flush();
-            int idDonacion = d.getIdDonacion();
-            em.createNativeQuery("UPDATE donacion SET registrado_en = NOW() WHERE id_donacion = ?1")
+            Query saveQuery = em.createNativeQuery("{CALL sp_guardarDonacion(?,?,?,?,?)}");
+            saveQuery.setParameter(1, d.getCantidad());
+            saveQuery.setParameter(2, d.getDescripcion());
+            saveQuery.setParameter(3, d.getIdTipoDonacion());
+            saveQuery.setParameter(4, d.getIdActividad());
+            saveQuery.setParameter(5, d.getIdUsuarioRegistro());
+            Object saveResult = saveQuery.getSingleResult();
+            int idDonacion = extractInt(saveResult);
+
+            // Mantener comportamiento actual del sistema: nuevas donaciones quedan PENDIENTE.
+            em.createNativeQuery("UPDATE donacion SET estado = 'PENDIENTE' WHERE id_donacion = ?1")
                 .setParameter(1, idDonacion)
                 .executeUpdate();
 
@@ -172,10 +179,13 @@ public class DonacionRepository {
                 return false;
             }
 
-            actual.setCantidad(d.getCantidad());
-            actual.setDescripcion(d.getDescripcion());
-            actual.setIdActividad(d.getIdActividad());
-            em.merge(actual);
+            em.createNativeQuery("{CALL sp_actualizarDonacion(?,?,?,?,?)}")
+                .setParameter(1, d.getIdDonacion())
+                .setParameter(2, d.getCantidad())
+                .setParameter(3, d.getDescripcion())
+                .setParameter(4, actual.getIdTipoDonacion())
+                .setParameter(5, d.getIdActividad())
+                .getResultList();
 
             if (d.isDonacionAnonima()) {
                 em.createNativeQuery("DELETE FROM donacion_donante WHERE id_donacion = ?1")
@@ -278,6 +288,26 @@ public class DonacionRepository {
         }
     }
 
+    public boolean confirmar(int id, int idUsuario) {
+        EntityManager em = emf().createEntityManager();
+        EntityTransaction tx = em.getTransaction();
+        try {
+            tx.begin();
+            em.createNativeQuery("{CALL sp_confirmar_donacion_inventario(?,?)}")
+                .setParameter(1, id)
+                .setParameter(2, idUsuario)
+                .executeUpdate();
+            tx.commit();
+            return true;
+        } catch (Exception e) {
+            if (tx.isActive()) tx.rollback();
+            logger.log(Level.SEVERE, "Error al confirmar donacion", e);
+            return false;
+        } finally {
+            em.close();
+        }
+    }
+
     public boolean cambiarEstado(int id, String estado) {
         EntityManager em = emf().createEntityManager();
         EntityTransaction tx = em.getTransaction();
@@ -299,5 +329,41 @@ public class DonacionRepository {
         } finally {
             em.close();
         }
+    }
+
+    private Donacion mapearDetalle(Object[] row) {
+        Donacion d = new Donacion();
+        d.setIdDonacion(row[0] != null ? ((Number) row[0]).intValue() : 0);
+        d.setCantidad(row[1] != null ? ((Number) row[1]).doubleValue() : 0.0);
+        d.setDescripcion(row[2] != null ? String.valueOf(row[2]) : null);
+        d.setIdTipoDonacion(row[3] != null ? ((Number) row[3]).intValue() : 0);
+        d.setTipoDonacion(row[4] != null ? String.valueOf(row[4]) : null);
+        d.setIdActividad(row[5] != null ? ((Number) row[5]).intValue() : 0);
+        d.setActividad(row[6] != null ? String.valueOf(row[6]) : null);
+        d.setIdUsuarioRegistro(row[7] != null ? ((Number) row[7]).intValue() : 0);
+        d.setUsuarioRegistro(row[8] != null ? String.valueOf(row[8]) : null);
+        d.setDonacionAnonima(row[9] != null && ((Number) row[9]).intValue() == 1);
+        d.setTipoDonante(row[10] != null ? String.valueOf(row[10]) : null);
+        d.setNombreDonante(row[11] != null ? String.valueOf(row[11]) : null);
+        d.setCorreoDonante(row[12] != null ? String.valueOf(row[12]) : null);
+        d.setTelefonoDonante(row[13] != null ? String.valueOf(row[13]) : null);
+        d.setDniDonante(row[14] != null ? String.valueOf(row[14]) : null);
+        d.setRucDonante(row[15] != null ? String.valueOf(row[15]) : null);
+        d.setIdItem(row[16] != null ? ((Number) row[16]).intValue() : null);
+        d.setCantidadItem(row[17] != null ? ((Number) row[17]).doubleValue() : null);
+        d.setItemNombre(row[18] != null ? String.valueOf(row[18]) : null);
+        d.setItemCategoria(row[19] != null ? String.valueOf(row[19]) : null);
+        d.setItemUnidadMedida(row[20] != null ? String.valueOf(row[20]) : null);
+        d.setEstado(row[21] != null ? String.valueOf(row[21]) : null);
+        return d;
+    }
+
+    private int extractInt(Object result) {
+        if (result == null) return 0;
+        if (result instanceof Number n) return n.intValue();
+        if (result instanceof Object[] row && row.length > 0 && row[0] instanceof Number n) {
+            return n.intValue();
+        }
+        return 0;
     }
 }

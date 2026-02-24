@@ -310,6 +310,11 @@ CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_anular_donacion_inventario` (IN 
                 p_id_donacion, 'donacion', CONCAT('Anulacion de donacion #', p_id_donacion, '. ', IFNULL(p_motivo, '')), p_id_usuario_anula, NOW()
             );
         END IF;
+    ELSEIF v_tipo = 1 THEN
+        DELETE FROM movimiento_financiero
+        WHERE tipo = 'INGRESO'
+          AND categoria = 'Donaciones'
+          AND descripcion LIKE CONCAT('%(Donacion #', p_id_donacion, ')%');
     END IF;
 
     UPDATE donacion
@@ -317,6 +322,105 @@ CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_anular_donacion_inventario` (IN 
         anulado_en = NOW(),
         id_usuario_anula = p_id_usuario_anula,
         motivo_anulacion = LEFT(IFNULL(p_motivo, 'Anulacion manual'), 255),
+        actualizado_en = NOW()
+    WHERE id_donacion = p_id_donacion;
+
+    COMMIT;
+END$$
+
+CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_confirmar_donacion_inventario` (IN `p_id_donacion` INT, IN `p_id_usuario_confirma` INT)   BEGIN
+    DECLARE v_tipo INT;
+    DECLARE v_estado VARCHAR(20);
+    DECLARE v_cantidad DECIMAL(10,2) DEFAULT 0;
+    DECLARE v_id_actividad INT;
+    DECLARE v_descripcion VARCHAR(150);
+    DECLARE v_item INT;
+    DECLARE v_cantidad_item DECIMAL(10,2);
+    DECLARE v_stock_anterior DECIMAL(10,2) DEFAULT 0;
+    DECLARE v_stock_nuevo DECIMAL(10,2) DEFAULT 0;
+
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        RESIGNAL;
+    END;
+
+    START TRANSACTION;
+
+    SELECT id_tipo_donacion, COALESCE(estado, 'PENDIENTE'), cantidad, id_actividad, descripcion
+    INTO v_tipo, v_estado, v_cantidad, v_id_actividad, v_descripcion
+    FROM donacion
+    WHERE id_donacion = p_id_donacion
+    FOR UPDATE;
+
+    IF v_tipo IS NULL THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'La donacion no existe.';
+    END IF;
+
+    IF v_estado = 'ANULADO' THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'No se puede confirmar una donacion anulada.';
+    END IF;
+
+    IF v_estado = 'CONFIRMADO' THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'La donacion ya esta confirmada.';
+    END IF;
+
+    IF v_tipo = 2 THEN
+        SELECT id_item, cantidad
+        INTO v_item, v_cantidad_item
+        FROM donacion_detalle
+        WHERE id_donacion = p_id_donacion
+        LIMIT 1;
+
+        IF v_item IS NULL OR v_cantidad_item IS NULL OR v_cantidad_item <= 0 THEN
+            SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'No se encontro detalle valido para la donacion en especie.';
+        END IF;
+
+        SELECT stock_actual INTO v_stock_anterior
+        FROM inventario_item
+        WHERE id_item = v_item
+        FOR UPDATE;
+
+        SET v_stock_nuevo = v_stock_anterior + v_cantidad_item;
+
+        UPDATE inventario_item
+        SET stock_actual = v_stock_nuevo,
+            actualizado_en = NOW()
+        WHERE id_item = v_item;
+
+        INSERT INTO inventario_movimiento(
+            id_item, tipo_movimiento, motivo, cantidad, stock_anterior, stock_nuevo,
+            id_referencia, tabla_referencia, observacion, id_usuario, creado_en
+        ) VALUES(
+            v_item, 'ENTRADA', 'DONACION', v_cantidad_item, v_stock_anterior, v_stock_nuevo,
+            p_id_donacion, 'donacion', CONCAT('Confirmacion de donacion #', p_id_donacion, '. ', IFNULL(v_descripcion, '')), p_id_usuario_confirma, NOW()
+        );
+    ELSEIF v_tipo = 1 THEN
+        IF NOT EXISTS (
+            SELECT 1
+            FROM movimiento_financiero
+            WHERE tipo = 'INGRESO'
+              AND categoria = 'Donaciones'
+              AND descripcion LIKE CONCAT('%(Donacion #', p_id_donacion, ')%')
+        ) THEN
+            INSERT INTO movimiento_financiero(
+                tipo, monto, descripcion, categoria, comprobante, fecha_movimiento, id_actividad, id_usuario, creado_en
+            ) VALUES(
+                'INGRESO',
+                IFNULL(v_cantidad, 0),
+                CONCAT('Donacion', IF(IFNULL(v_descripcion, '') = '', '', CONCAT(': ', v_descripcion)), ' (Donacion #', p_id_donacion, ')'),
+                'Donaciones',
+                CONCAT('BOLETA-', p_id_donacion),
+                CURDATE(),
+                v_id_actividad,
+                p_id_usuario_confirma,
+                NOW()
+            );
+        END IF;
+    END IF;
+
+    UPDATE donacion
+    SET estado = 'CONFIRMADO',
         actualizado_en = NOW()
     WHERE id_donacion = p_id_donacion;
 
