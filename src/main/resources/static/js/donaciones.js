@@ -1,6 +1,7 @@
 const modal = document.getElementById("modalDonacion");
 const form = document.getElementById("formDonacion");
 const tipoDonacionSelect = document.getElementById("tipoDonacion");
+const subtipoDonacionSelect = document.getElementById("subtipoDonacion");
 const seccionEspecie = document.getElementById("seccionEspecie");
 const labelCantidad = document.getElementById("labelCantidad");
 const btnGuardarDonacion = document.getElementById("btnGuardarDonacion");
@@ -12,7 +13,66 @@ const donacionAnonimaCheck = document.getElementById("donacionAnonima");
 const donanteFields = document.getElementById("donanteFields");
 const dniDonanteInput = document.getElementById("dniDonante");
 const buscarDonacionesInput = document.getElementById("buscarDonaciones");
+const buscarDonanteInput = document.getElementById("buscarDonanteInput");
+const buscarDonanteResultados = document.getElementById("buscarDonanteResultados");
+const donanteSeleccionadoInfo = document.getElementById("donanteSeleccionadoInfo");
+const donanteSeleccionadoTexto = document.getElementById("donanteSeleccionadoTexto");
+const buscarDonanteSection = document.getElementById("buscarDonanteSection");
 const PAGINA_TAMANO = 5;
+
+/* ===================================================================
+   SUBTIPOS DE DONACIÓN (opciones dinámicas según tipo)
+=================================================================== */
+const SUBTIPOS_DINERO = [
+    'Efectivo',
+    'Deposito bancario',
+    'Transferencia',
+    'Yape/Plin',
+    'Cheque',
+    'Otro'
+];
+const SUBTIPOS_ESPECIE_FALLBACK = [
+    'Alimentos',
+    'Ropa',
+    'Utiles Escolares',
+    'Medicinas',
+    'Higiene',
+    'Otros'
+];
+let SUBTIPOS_ESPECIE = [...SUBTIPOS_ESPECIE_FALLBACK];
+
+async function cargarSubtiposEspecieDesdeCategorias() {
+    try {
+        const resp = await fetch("inventario?accion=listar_categorias");
+        const categorias = await resp.json();
+        SUBTIPOS_ESPECIE = (categorias || [])
+            .map(c => (c && c.nombre ? String(c.nombre).trim() : ""))
+            .filter(nombre => nombre.length > 0);
+        if (SUBTIPOS_ESPECIE.length === 0) {
+            SUBTIPOS_ESPECIE = [...SUBTIPOS_ESPECIE_FALLBACK];
+        }
+    } catch (error) {
+        console.error("Error al cargar categorias de inventario:", error);
+        SUBTIPOS_ESPECIE = [...SUBTIPOS_ESPECIE_FALLBACK];
+    }
+}
+
+function actualizarSubtipos(valorSeleccionado) {
+    if (!subtipoDonacionSelect) return;
+    const tipo = tipoDonacionSelect ? tipoDonacionSelect.value : '';
+    let opciones = [];
+    if (tipo === '1') opciones = SUBTIPOS_DINERO;
+    else if (tipo === '2') opciones = SUBTIPOS_ESPECIE;
+
+    subtipoDonacionSelect.innerHTML = '<option value="">Seleccione</option>';
+    opciones.forEach(op => {
+        const option = document.createElement('option');
+        option.value = op;
+        option.textContent = op;
+        if (valorSeleccionado && op === valorSeleccionado) option.selected = true;
+        subtipoDonacionSelect.appendChild(option);
+    });
+}
 
 // --- Lookup (DNI / RUC) using your provided APIs ---
 // NOTE: token is exposed client-side because you provided the URL/token. If you prefer the token secret
@@ -26,6 +86,184 @@ function debounce(fn, delay = 400) {
         clearTimeout(timer);
         timer = setTimeout(() => fn.apply(this, args), delay);
     };
+}
+
+/* ===================================================================
+   BUSCADOR DE DONANTES REGISTRADOS EN BD
+=================================================================== */
+let donanteSeleccionadoData = null;
+
+async function buscarDonanteEnBD(termino) {
+    if (!termino || termino.trim().length < 2) {
+        if (buscarDonanteResultados) buscarDonanteResultados.style.display = 'none';
+        return;
+    }
+    const t = termino.trim();
+    try {
+        const resp = await fetch(`donaciones?accion=buscarDonante&q=${encodeURIComponent(t)}`);
+        const donantes = await resp.json();
+
+        // Si no hay resultados en BD y el texto parece un DNI (8 digitos) o RUC (11 digitos), buscar en API
+        const esDNI = /^\d{8}$/.test(t);
+        const esRUC = /^\d{11}$/.test(t);
+        if ((!donantes || donantes.length === 0) && (esDNI || esRUC)) {
+            await buscarDonanteEnAPI(t, esDNI);
+            return;
+        }
+
+        renderResultadosDonantes(donantes, t);
+    } catch (err) {
+        console.error('Error buscando donantes:', err);
+        if (buscarDonanteResultados) buscarDonanteResultados.style.display = 'none';
+    }
+}
+
+async function buscarDonanteEnAPI(ident, esDNI) {
+    if (!buscarDonanteResultados) return;
+    buscarDonanteResultados.innerHTML = '<div class="donante-search-no-results"><i class="fa-solid fa-spinner fa-spin"></i> No encontrado en registros, buscando en API...</div>';
+    buscarDonanteResultados.style.display = 'block';
+    try {
+        const url = esDNI
+            ? DNI_API_TEMPLATE.replace('{ident}', encodeURIComponent(ident))
+            : RUC_API_TEMPLATE.replace('{ident}', encodeURIComponent(ident));
+        const resp = await fetch(url);
+        if (!resp.ok) throw new Error('No encontrado en API');
+        const data = await resp.json();
+
+        let nombre = '';
+        if (esDNI) {
+            nombre = data.nombre_completo || data.nombre_completo_inei || data.nombre || (data.nombres ? ([data.nombres, data.apellidoPaterno, data.apellidoMaterno].filter(Boolean).join(' ')) : '');
+        } else {
+            nombre = data.razon_social || data.nombre_o_razon_social || data.razonSocial || data.nombre || '';
+        }
+
+        if (nombre) {
+            const donanteAPI = {
+                idDonante: null,
+                tipo: esDNI ? 'Persona' : 'Empresa',
+                nombre: nombre,
+                correo: '',
+                telefono: '',
+                dni: esDNI ? ident : '',
+                ruc: esDNI ? '' : ident,
+                desdeAPI: true
+            };
+            let html = `<div class="donante-search-item" style="background:#fffbeb;border-left:3px solid #f59e0b;" onclick='seleccionarDonante(${JSON.stringify(donanteAPI)})'>
+                <div class="donante-icon" style="background:#fef3c7;color:#d97706;"><i class="fa-solid fa-globe"></i></div>
+                <div class="donante-info">
+                    <div class="donante-nombre">${escapeHtml(nombre)}</div>
+                    <div class="donante-detalle">${esDNI ? 'DNI' : 'RUC'}: ${escapeHtml(ident)} · <span style="color:#d97706;">Encontrado en API (nuevo donante)</span></div>
+                </div>
+            </div>`;
+            buscarDonanteResultados.innerHTML = html;
+        } else {
+            buscarDonanteResultados.innerHTML = '<div class="donante-search-no-results"><i class="fa-solid fa-user-slash"></i> No encontrado en registros ni en la API. Ingresa los datos manualmente.</div>';
+        }
+        buscarDonanteResultados.style.display = 'block';
+    } catch (err) {
+        console.error('Error buscando donante en API:', err);
+        buscarDonanteResultados.innerHTML = '<div class="donante-search-no-results"><i class="fa-solid fa-user-slash"></i> No encontrado en registros ni en la API. Ingresa los datos manualmente.</div>';
+        buscarDonanteResultados.style.display = 'block';
+    }
+}
+
+function renderResultadosDonantes(donantes, termino) {
+    if (!buscarDonanteResultados) return;
+    if (!donantes || donantes.length === 0) {
+        buscarDonanteResultados.innerHTML = '<div class="donante-search-no-results"><i class="fa-solid fa-user-slash"></i> No se encontro donante registrado. Ingresa los datos manualmente o usa el DNI/RUC.</div>';
+        buscarDonanteResultados.style.display = 'block';
+        return;
+    }
+    let html = '';
+    donantes.forEach(d => {
+        const icono = d.tipo === 'Empresa' || d.tipo === 'Grupo' ? 'fa-building' : 'fa-user';
+        const ident = d.dni ? `DNI: ${d.dni}` : (d.ruc ? `RUC: ${d.ruc}` : '');
+        const contacto = [d.correo, d.telefono].filter(Boolean).join(' | ');
+        const detalle = [d.tipo, ident, contacto].filter(Boolean).join(' · ');
+        html += `<div class="donante-search-item" onclick='seleccionarDonante(${JSON.stringify(d)})'>
+            <div class="donante-icon"><i class="fa-solid ${icono}"></i></div>
+            <div class="donante-info">
+                <div class="donante-nombre">${escapeHtml(d.nombre)}</div>
+                <div class="donante-detalle">${escapeHtml(detalle)}</div>
+            </div>
+        </div>`;
+    });
+    buscarDonanteResultados.innerHTML = html;
+    buscarDonanteResultados.style.display = 'block';
+}
+
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function seleccionarDonante(donante) {
+    donanteSeleccionadoData = donante;
+    // Rellenar campos del formulario
+    const tipoMap = { 'Persona': 'PERSONA', 'Empresa': 'EMPRESA', 'Grupo': 'GRUPO' };
+    const tipoDonante = document.getElementById('tipoDonante');
+    if (tipoDonante) tipoDonante.value = tipoMap[donante.tipo] || 'PERSONA';
+
+    const identEl = document.getElementById('dniDonante');
+    const tipoVal = (tipoMap[donante.tipo] || 'PERSONA');
+    if (identEl) {
+        identEl.value = (tipoVal === 'PERSONA') ? (donante.dni || '') : (donante.ruc || '');
+    }
+
+    const nombreEl = document.getElementById('nombreDonante');
+    if (nombreEl) nombreEl.value = donante.nombre || '';
+
+    const correoEl = document.getElementById('correoDonante');
+    if (correoEl) correoEl.value = donante.correo || '';
+
+    const telefonoEl = document.getElementById('telefonoDonante');
+    if (telefonoEl) telefonoEl.value = donante.telefono || '';
+
+    // Ocultar resultados y mostrar chip de seleccion
+    if (buscarDonanteResultados) buscarDonanteResultados.style.display = 'none';
+    if (buscarDonanteInput) buscarDonanteInput.value = '';
+    mostrarDonanteSeleccionado(donante);
+
+    actualizarDonante();
+}
+
+function mostrarDonanteSeleccionado(donante) {
+    if (donanteSeleccionadoInfo && donanteSeleccionadoTexto) {
+        const ident = donante.dni ? `DNI: ${donante.dni}` : (donante.ruc ? `RUC: ${donante.ruc}` : '');
+        donanteSeleccionadoTexto.innerHTML = `<i class="fa-solid fa-circle-check"></i> ${escapeHtml(donante.nombre)} ${ident ? '(' + escapeHtml(ident) + ')' : ''} <span style="color:#6b7280;font-weight:400;">— donante registrado</span>`;
+        donanteSeleccionadoInfo.style.display = 'flex';
+    }
+}
+
+function limpiarDonanteSeleccionado() {
+    donanteSeleccionadoData = null;
+    if (donanteSeleccionadoInfo) donanteSeleccionadoInfo.style.display = 'none';
+    // Limpiar campos del donante
+    ['dniDonante', 'nombreDonante', 'correoDonante', 'telefonoDonante'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+    });
+    const tipoDonante = document.getElementById('tipoDonante');
+    if (tipoDonante) tipoDonante.value = 'PERSONA';
+    actualizarDonante();
+}
+
+const debouncedBuscarDonante = debounce(function() {
+    if (buscarDonanteInput) {
+        buscarDonanteEnBD(buscarDonanteInput.value);
+    }
+}, 350);
+
+if (buscarDonanteInput) {
+    buscarDonanteInput.addEventListener('input', debouncedBuscarDonante);
+    // Cerrar dropdown si se hace click fuera
+    document.addEventListener('click', function(e) {
+        if (buscarDonanteResultados && !buscarDonanteInput.contains(e.target) && !buscarDonanteResultados.contains(e.target)) {
+            buscarDonanteResultados.style.display = 'none';
+        }
+    });
 }
 
 async function fetchDonanteByIdent() {
@@ -46,7 +284,45 @@ async function fetchDonanteByIdent() {
         return;
     }
 
-    if (statusEl) statusEl.textContent = 'Buscando información...';
+    if (statusEl) statusEl.textContent = 'Buscando en registros...';
+
+    // PASO 1: Buscar primero en la base de datos local
+    try {
+        const respBD = await fetch(`donaciones?accion=buscarDonante&q=${encodeURIComponent(ident)}`);
+        const donantes = await respBD.json();
+        // Buscar una coincidencia exacta por DNI, RUC o nombre
+        const match = (donantes || []).find(d => {
+            if (tipo === 'PERSONA' && d.dni && d.dni === ident) return true;
+            if ((tipo === 'EMPRESA' || tipo === 'GRUPO') && d.ruc && d.ruc === ident) return true;
+            // Tambien aceptar coincidencia por telefono como fallback
+            if (d.telefono && d.telefono === ident) return true;
+            return false;
+        });
+        if (match) {
+            // Donante encontrado en BD - autocompletar
+            const nombreInput = document.getElementById('nombreDonante');
+            if (nombreInput) nombreInput.value = match.nombre || '';
+            const correoEl = document.getElementById('correoDonante');
+            if (correoEl && match.correo) correoEl.value = match.correo;
+            const telefonoEl = document.getElementById('telefonoDonante');
+            if (telefonoEl && match.telefono) telefonoEl.value = match.telefono;
+
+            const tipoMap = { 'Persona': 'PERSONA', 'Empresa': 'EMPRESA', 'Grupo': 'GRUPO' };
+            if (tipoDonanteSelect && match.tipo) tipoDonanteSelect.value = tipoMap[match.tipo] || tipo;
+
+            donanteSeleccionadoData = match;
+            mostrarDonanteSeleccionado(match);
+            actualizarDonante();
+            if (statusEl) statusEl.innerHTML = '<span style="color:#10b981;"><i class="fa-solid fa-database"></i> Donante encontrado en el sistema</span>';
+            setTimeout(() => { if (statusEl) statusEl.textContent = ''; }, 4000);
+            return;
+        }
+    } catch (err) {
+        console.error('Error buscando donante en BD:', err);
+    }
+
+    // PASO 2: Si no encontrado en BD, consultar API externa
+    if (statusEl) statusEl.textContent = 'No encontrado en registros, buscando en API...';
     try {
         const url = tipo === 'PERSONA'
             ? DNI_API_TEMPLATE.replace('{ident}', encodeURIComponent(ident))
@@ -71,18 +347,18 @@ async function fetchDonanteByIdent() {
                 if (tipoDonanteSelect) tipoDonanteSelect.value = 'EMPRESA';
             }
             actualizarDonante();
-            if (statusEl) statusEl.textContent = 'Autocompletado';
+            if (statusEl) statusEl.innerHTML = '<span style="color:#667eea;"><i class="fa-solid fa-globe"></i> Datos obtenidos de API externa</span>';
         } else {
-            if (statusEl) statusEl.textContent = 'No se encontró nombre en la respuesta';
+            if (statusEl) statusEl.textContent = 'No se encontro nombre en la respuesta';
         }
     } catch (err) {
         console.error('Lookup identificador:', err);
-        if (statusEl) statusEl.textContent = 'Error al consultar API';
+        if (statusEl) statusEl.textContent = 'No encontrado en registros ni en API';
     }
     setTimeout(() => {
         const statusEl2 = document.getElementById('identLookupStatus');
         if (statusEl2) statusEl2.textContent = '';
-    }, 3500);
+    }, 4000);
 }
 
 const debouncedFetchIdent = debounce(fetchDonanteByIdent, 450);
@@ -122,34 +398,34 @@ if (form) {
 
         if (tipoVal === "PERSONA") {
             if (!identVal) {
-                alert("Para persona: ingresa el DNI del donante.");
+                Notify.warning("Para persona: ingresa el DNI del donante.");
                 e.preventDefault();
                 return false;
             }
             if (!nombre) {
-                alert("Para persona: ingresa el nombre del donante.");
+                Notify.warning("Para persona: ingresa el nombre del donante.");
                 e.preventDefault();
                 return false;
             }
             if (!correo && !telefono) {
-                alert("Para persona: ingresa al menos correo o teléfono del donante.");
+                Notify.warning("Para persona: ingresa al menos correo o teléfono del donante.");
                 e.preventDefault();
                 return false;
             }
         } else {
             // Empresa / Grupo -> identVal contiene RUC en este modo
             if (!identVal) {
-                alert("Para empresa/grupo es obligatorio el RUC.");
+                Notify.warning("Para empresa/grupo es obligatorio el RUC.");
                 e.preventDefault();
                 return false;
             }
             if (!nombre) {
-                alert("Para empresa/grupo: ingresa la razón social del donante.");
+                Notify.warning("Para empresa/grupo: ingresa la razón social del donante.");
                 e.preventDefault();
                 return false;
             }
             if (!correo && !telefono) {
-                alert("Para empresa/grupo: ingresa al menos correo o teléfono del donante.");
+                Notify.warning("Para empresa/grupo: ingresa al menos correo o teléfono del donante.");
                 e.preventDefault();
                 return false;
             }
@@ -170,13 +446,19 @@ function abrirModal() {
     modal.style.display = "flex";
     form.reset();
     donacionOriginal = null;
+    donanteSeleccionadoData = null;
     if (accionDonacionInput) accionDonacionInput.value = "registrar";
     if (idDonacionInput) idDonacionInput.value = "";
     if (motivoEdicionInput) motivoEdicionInput.value = "";
     document.getElementById("tituloModal").innerText = "Registrar Donacion";
     if (btnGuardarDonacion) btnGuardarDonacion.textContent = "Registrar donacion";
+    // Reset buscador donante
+    if (buscarDonanteInput) buscarDonanteInput.value = '';
+    if (buscarDonanteResultados) buscarDonanteResultados.style.display = 'none';
+    if (donanteSeleccionadoInfo) donanteSeleccionadoInfo.style.display = 'none';
+    if (subtipoDonacionSelect) subtipoDonacionSelect.innerHTML = '<option value="">Seleccione primero el tipo</option>';
     desbloquearCamposEdicion();
-    const cargas = Promise.all([cargarActividades(), cargarItemsInventario()]);
+    const cargas = Promise.all([cargarActividades(), cargarItemsInventario(), cargarSubtiposEspecieDesdeCategorias()]);
     actualizarCamposInventario();
     return cargas;
 }
@@ -256,6 +538,7 @@ async function cargarItemsInventario() {
 }
 
 function onTipoDonacionChange() {
+    actualizarSubtipos();
     actualizarCamposInventario();
 }
 
@@ -294,7 +577,7 @@ async function editarDonacion(idDonacion) {
         const resp = await fetch(`donaciones?accion=obtener&id=${idDonacion}`);
         const data = await resp.json();
         if (!data || data.ok === false) {
-            alert(data?.message || "No se pudo cargar la donacion");
+            Notify.error(data?.message || "No se pudo cargar la donación");
             return;
         }
 
@@ -305,6 +588,7 @@ async function editarDonacion(idDonacion) {
         if (idDonacionInput) idDonacionInput.value = data.idDonacion || "";
 
         document.getElementById("tipoDonacion").value = String(data.idTipoDonacion || "");
+        actualizarSubtipos(data.subtipoDonacion || '');
         document.getElementById("cantidad").value = (data.cantidadItem ?? data.cantidad ?? "");
         document.getElementById("descripcion").value = data.descripcion || "";
         document.getElementById("actividad").value = String(data.idActividad || "");
@@ -331,7 +615,7 @@ async function editarDonacion(idDonacion) {
         if (btnGuardarDonacion) btnGuardarDonacion.textContent = "Guardar cambios";
     } catch (error) {
         console.error("Error cargando donacion para editar:", error);
-        alert("No se pudo abrir la donacion para editar");
+        Notify.error("No se pudo abrir la donación para editar");
     }
 }
 
@@ -339,6 +623,10 @@ function actualizarDonante() {
     const anonima = donacionAnonimaCheck && donacionAnonimaCheck.checked;
     if (donanteFields) {
         donanteFields.style.display = anonima ? "none" : "grid";
+    }
+    // Ocultar/mostrar buscador de donante
+    if (buscarDonanteSection) {
+        buscarDonanteSection.style.display = anonima ? "none" : "grid";
     }
 
     const nombreDonante = document.getElementById("nombreDonante");
@@ -419,12 +707,13 @@ function actualizarDonante() {
 }
 
 async function anularDonacion(idDonacion) {
-    const motivo = prompt("Motivo de anulacion (opcional):", "Anulacion manual");
+    const motivo = prompt("Motivo de anulación (opcional):", "Anulación manual");
     if (motivo === null) {
         return;
     }
 
-    if (!confirm("Se anulara la donacion y, si fue en especie, se revertira su stock. ¿Continuar?")) {
+    const ok = await Notify.confirm("¿Anular esta donación?", "Se anulará la donación y, si fue en especie, se revertirá su stock.", { variant: 'danger', okText: 'Sí, anular' });
+    if (!ok) {
         return;
     }
 
@@ -441,19 +730,21 @@ async function anularDonacion(idDonacion) {
         });
         const result = await resp.json();
         if (result.ok) {
-            window.location.reload();
+            Notify.success("Donación anulada correctamente");
+            setTimeout(() => window.location.reload(), 1200);
         } else {
-            alert(result.message || "No se pudo anular la donacion");
+            Notify.error(result.message || "No se pudo anular la donación");
         }
     } catch (error) {
         console.error("Error anulando donacion:", error);
-        alert("Error al anular la donacion");
+        Notify.error("Error al anular la donación");
     }
 }
 
 // Cambiar estado (ej. Aprobar -> ACTIVO)
 async function cambiarEstadoDonacion(idDonacion, nuevoEstado) {
-    if (!confirm(`¿Cambiar estado de la donación #${idDonacion} a ${nuevoEstado}?`)) return;
+    const ok = await Notify.confirm(`¿Cambiar estado de la donación #${idDonacion}?`, `El nuevo estado será: ${nuevoEstado}`, { variant: 'info', okText: 'Sí, cambiar' });
+    if (!ok) return;
     try {
         const params = new URLSearchParams();
         params.append('accion', 'cambiar_estado');
@@ -469,14 +760,14 @@ async function cambiarEstadoDonacion(idDonacion, nuevoEstado) {
         let obj = {};
         try { obj = JSON.parse(text); } catch(e) { obj = { ok: false, message: text }; }
         if (obj.ok) {
-            alert(obj.message || 'Estado actualizado');
-            location.reload();
+            Notify.success(obj.message || 'Estado actualizado');
+            setTimeout(() => location.reload(), 1200);
         } else {
-            alert('Error: ' + (obj.message || 'No se pudo actualizar el estado'));
+            Notify.error(obj.message || 'No se pudo actualizar el estado');
         }
     } catch (err) {
         console.error(err);
-        alert('Error al cambiar el estado de la donación');
+        Notify.error('Error al cambiar el estado de la donación');
     }
 }
 
@@ -546,7 +837,7 @@ function renderPaginacionDonaciones() {
             fila.style.display = "none";
         });
         contenedor.style.display = "none";
-        tbody.insertAdjacentHTML("beforeend", '<tr id="filaNoResultadosDonaciones"><td colspan="8" class="no-data">No hay donaciones que coincidan con la busqueda</td></tr>');
+        tbody.insertAdjacentHTML("beforeend", '<tr id="filaNoResultadosDonaciones"><td colspan="10" class="no-data">No hay donaciones que coincidan con la busqueda</td></tr>');
         return;
     }
 
@@ -603,7 +894,7 @@ if (tipoDonacionSelect) {
     tipoDonacionSelect.addEventListener("change", () => {
         if (tipoDonacionSelect.dataset.locked === "1") {
             tipoDonacionSelect.value = tipoDonacionSelect.dataset.original || "";
-            alert("No se puede cambiar el tipo de donacion en modo edicion.");
+            Notify.warning("No se puede cambiar el tipo de donación en modo edición.");
             return;
         }
         actualizarCamposInventario();
@@ -618,7 +909,7 @@ if (form) {
         if (tipoDonacionSelect && tipoDonacionSelect.value === "2") {
             if (!idItemSelect || !idItemSelect.value) {
                 e.preventDefault();
-                alert('Para donaciones en especie debes seleccionar un item del inventario.');
+                Notify.warning('Para donaciones en especie debes seleccionar un ítem del inventario.');
                 return;
             }
         }
@@ -639,6 +930,7 @@ if (donacionAnonimaCheck) {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
+    cargarSubtiposEspecieDesdeCategorias();
     actualizarCamposInventario();
     actualizarDonante();
     configurarEventosPaginacionDonaciones();
@@ -708,7 +1000,7 @@ async function guardarItemRapido(event) {
     let unidad = unidadSel;
     if (unidadSel === "__OTRO__") {
         unidad = (document.getElementById("qi_unidadOtro").value || "").trim();
-        if (!unidad) { alert("Especifique la unidad de medida"); if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-check"></i> Crear y seleccionar'; } return; }
+        if (!unidad) { Notify.warning("Especifique la unidad de medida"); if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-check"></i> Crear y seleccionar'; } return; }
     }
 
     const params = new URLSearchParams();
@@ -739,11 +1031,11 @@ async function guardarItemRapido(event) {
             const noItemsNotice = document.getElementById('noItemsNotice');
             if (noItemsNotice) noItemsNotice.style.display = 'none';
         } else {
-            alert(result.message || "No se pudo crear el item");
+            Notify.error(result.message || "No se pudo crear el ítem");
         }
     } catch (e) {
         console.error("Error creando item rápido:", e);
-        alert("Error al crear el item");
+        Notify.error("Error al crear el ítem");
     } finally {
         if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-check"></i> Crear y seleccionar'; }
     }
